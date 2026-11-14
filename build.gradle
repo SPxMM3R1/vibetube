@@ -1,0 +1,32 @@
+// Mismas herramientas que SmartTube: el núcleo usa la sintaxis de AGP 7.
+apply from: gradle.ext.sharedModulesConstants
+
+buildscript {
+    apply from: gradle.ext.sharedModulesConstants
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.4.2'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:' + kotlinVersion
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+    configurations.all {
+        // Igual que SmartTube: versiones que el núcleo necesita.
+        resolutionStrategy.force 'com.squareup.okhttp3:okhttp:' + okhttpVersion
+        resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:' + kotlinVersion
+        resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:' + kotlinVersion
+        resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib:' + kotlinVersion
+        resolutionStrategy.force 'org.chromium.net:cronet-api:' + cronetApiVersion
+        // youtubeapi pide kotlinx-coroutines con la versión de Kotlin: SmartTube la fija así.
+        resolutionStrategy.force 'org.jetbrains.kotlinx:kotlinx-coroutines-android:' + kotlinxVersion
+    }
+}

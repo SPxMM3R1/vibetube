@@ -1,0 +1,49 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'cl.vibe.videos'
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId 'cl.vibe.videos'
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode 1
+        versionName '0.1.0'
+        multiDexEnabled true
+        // El núcleo trae sabores (stbeta, ststable, stfdroid): usamos el estable.
+        missingDimensionStrategy 'default', 'ststable'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    packagingOptions {
+        resources.excludes += ['META-INF/*.kotlin_module', 'META-INF/DEPENDENCIES', 'META-INF/LICENSE*', 'META-INF/NOTICE*']
+    }
+}
+
+dependencies {
+    implementation project(':mediaserviceinterfaces')
+    implementation project(':youtubeapi')
+    implementation project(':sharedutils')
+
+    implementation 'io.reactivex.rxjava2:rxandroid:' + rxAndroidVersion
+    implementation 'io.reactivex.rxjava2:rxjava:' + rxJavaVersion
+
+    // Reproductor: el mismo Media3 que VibeM3U (la versión más nueva que acepta AGP 7 / compileSdk 34).
+    def media3 = '1.4.1'
+    implementation "androidx.media3:media3-exoplayer:$media3"
+    implementation "androidx.media3:media3-exoplayer-dash:$media3"
+    implementation "androidx.media3:media3-exoplayer-hls:$media3"
+    implementation "androidx.media3:media3-ui:$media3"
+}
