@@ -36,7 +36,11 @@ import androidx.media3.ui.PlayerView;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemFormatInfo;
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 
@@ -217,12 +221,16 @@ public class PlayerActivity extends Activity {
                     androidx.media3.common.MediaItem.fromUri(info.getHlsManifestUrl()));
         }
         if (info.containsDashFormats()) {
-            try (InputStream mpd = info.createMpdStream()) {
-                DashManifest manifest = new DashManifestParser().parse(Uri.parse("https://www.youtube.com/"), mpd);
-                return new DashMediaSource.Factory(http).createMediaSource(manifest,
-                        new androidx.media3.common.MediaItem.Builder().setUri(Uri.parse("https://www.youtube.com/"))
-                                .setMimeType("application/dash+xml").build());
-            }
+            String mpd = readText(info.createMpdStream());
+            // Un video que no es en vivo es un manifiesto estático; el núcleo entrega «dynamic» y
+            // Media3 rechaza ese manifiesto al armar la fuente (checkArgument en DashMediaSource).
+            if (!info.isLive()) mpd = mpd.replace("type=\"dynamic\"", "type=\"static\"");
+            Log.i(TAG, "MPD de " + info.getTitle() + ": " + (mpd.contains("type=\"static\"") ? "static" : "dynamic"));
+            DashManifest manifest = new DashManifestParser().parse(Uri.parse("https://www.youtube.com/"),
+                    new ByteArrayInputStream(mpd.getBytes(StandardCharsets.UTF_8)));
+            return new DashMediaSource.Factory(http).createMediaSource(manifest,
+                    new androidx.media3.common.MediaItem.Builder().setUri(Uri.parse("https://www.youtube.com/"))
+                            .setMimeType("application/dash+xml").build());
         }
         if (info.containsHlsUrl()) {
             return new HlsMediaSource.Factory(http).createMediaSource(
@@ -326,6 +334,16 @@ public class PlayerActivity extends Activity {
 
     private static String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String readText(InputStream in) throws IOException {
+        try (InputStream stream = in) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = stream.read(buffer)) != -1) out.write(buffer, 0, read);
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        }
     }
 
     @Override
