@@ -111,6 +111,11 @@
 
 ## Bitácora (más reciente arriba)
 
+- 2026-11-15 — 0.4.0, quinta corrección (sin emulador: lo prueba el revisor). `isInside` nunca
+  subía desde un `View` (un TextView no es `ViewParent`), así que `inActions()` era siempre falso
+  y ◀ ▶ no llegaban a `moveAction`. Ahora compara la vista y sube desde `getParent()`. No había
+  otros `instanceof ViewParent` en `app/src`.
+
 - 2026-11-15 — 0.4.0, cuarta corrección (sin emulador: lo prueba el revisor). A: ◀ ▶ se atienden en
   `dispatchKeyEvent` (`handleArrowKey`) antes que las vistas, tanto en la fila de acciones
   (`moveAction`, con `Log.d`) como en las variantes de Calidad (`cycleVariant`); se quitaron los

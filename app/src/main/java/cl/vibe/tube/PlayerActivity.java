@@ -1248,12 +1248,14 @@ public class PlayerActivity extends Activity {
         return super.dispatchKeyEvent(event);
     }
 
+    /** true si `view` es `group` o está dentro de él. Un View no es ViewParent: se sube desde su padre. */
     private static boolean isInside(View group, View view) {
         if (group == null || view == null) return false;
-        Object parent = view;
+        if (view == group) return true;
+        ViewParent parent = view.getParent();
         while (parent != null) {
             if (parent == group) return true;
-            parent = parent instanceof ViewParent ? ((ViewParent) parent).getParent() : null;
+            parent = parent.getParent();
         }
         return false;
     }
