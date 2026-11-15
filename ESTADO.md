@@ -7,86 +7,116 @@
 - **Qué es**: cliente de video aparte para Android TV (pedido del usuario: «Haz un app aparte»),
   con el núcleo `MediaServiceCore` de SmartTube (MIT) y la interfaz de VibeM3U. Mockup de
   referencia: `../mockups/cliente-videos/cliente-videos.html` (versión 1, elegida por el usuario).
-- **Nombre**: VibeTube (antes VibeVideos). Carpeta `VibeTube` (antes `VibeVideos`). Paquete,
-  `namespace` y `applicationId`: `cl.vibe.tube`. Clase de aplicación: `TubeApp`.
-- **Versión**: 0.3.0 (versionCode 3). Entrega 2 de 4 de `04-vibetube.md`: Inicio, Buscar y Canal
-  según el mockup v1.
+- **Nombre**: VibeTube (antes VibeVideos). Carpeta `VibeTube`. Paquete, `namespace` y
+  `applicationId`: `cl.vibe.tube`. Clase de aplicación: `TubeApp`.
+- **Versión**: 0.4.0 (versionCode 4). Entrega 3 de 4 de `04-vibetube.md`: Cuenta, Reproduciendo y
+  Calidad, más las dos correcciones de la entrega 2 (Tendencias y directos) y la segunda ronda de
+  correcciones de esta misma versión (directos, clic fantasma y ◀ ▶; ver abajo).
+- **Probado en el emulador por el revisor** (APK de la primera corrección): título en 2 líneas;
+  «DESPUÉS · 39:14»; eyebrow y «Seguir sin cuenta» sin recorte; «Subtítulos» atenuado.
+- **Pendiente de prueba del revisor** (APK de la segunda ronda, y lo que no está en la lista
+  anterior): el directo sin 404, el clic fantasma, ◀ ▶ entre acciones, el reintento de directo y su
+  cierre a los 3 s, y el resto de la entrega 3. Lo compiló y probó solo la JVM; no se usó el
+  emulador en esta ronda.
 - **Idioma y región**: `es` / `CL`, fijados en `TubeApp.onCreate` antes de cualquier pedido.
 - **Repositorio**: solo local. El repositorio público `SPxMM3R1/vibetube`, las etiquetas y los
   releases los crea y publica el revisor. CI en `.github/workflows/android-ci.yml`.
 - **Escala**: las medidas están en unidades del mockup (1280 × 720). `Ui.init` calcula la escala
   de la pantalla real: en una TV 720p de densidad 1 es 1 dp; en el emulador VibeTV (1080p, 320 dpi)
-  es 1,5 px por unidad. Así el diseño es igual en cualquier TV.
-- **Funciona (emulador VibeTV, 2026-11-15)**:
-  - Inicio sin cuenta: pestañas, reloj, detalle del video marcado, «EN VIVO AHORA» y la fila
-    «TENDENCIAS EN CHILE» (ver limitaciones). Foco con marco, eyebrow con elipsis.
-  - Buscar: teclado propio de 30 teclas (a–z, ñ, 1–3), cursor, «Espacio · Borrar · Dictar»,
-    sugerencias con el prefijo en negrita, búsqueda 600 ms después de escribir y rejilla de 3.
-  - Canal (tecla Menú sobre una tarjeta): nombre, acciones, «MÁS RECIENTES» y «MÁS VISTOS».
-    «Ocultar en esta TV» quita el canal de Inicio al volver (se rehace la pantalla).
-  - En vivo: filas por grupo. Suscripciones y Biblioteca sin cuenta: aviso y «Iniciar sesión»
-    (muestra «Pronto»).
-  - Reproducción de videos que no son en vivo (ver «Reproductor» abajo).
-- **Limitaciones encontradas**:
-  - **Tendencias vacías**: `getTrendingObserve()` (cliente WEB, `FEtrending`) no entrega grupos
-    para esta cuenta; el núcleo registra «groups are null or empty» y termina sin datos. La fila
-    muestra «Sin videos por ahora.». Falta decidir qué poner en esa fila (ver «Pendiente»).
-  - **Inicio sin cuenta solo tiene directos**: lo único que devuelve el núcleo sin sesión son
-    transmisiones en vivo. Por eso el Inicio no puede mostrar un video grabado sin cuenta.
-  - **Directos no reproducen**: `getFormatInfoObserve` de un directo entrega DASH «dynamic» y
-    Media3 lo rechaza (`checkArgument` en `DashMediaSource.Factory.createMediaSource`). Sin HLS
-    para esos IDs no hay otra ruta. Es el mismo error de `PlayerActivity` de 0.1.0.
-  - **SABR**: algunos videos solo llegan por SABR; el reproductor muestra «Este video solo llega
-    por SABR…» (entrega 4).
-  - **Calidad**: sin cuenta, YouTube entrega las calidades altas solo por **SABR**; sin DASH ni
-    HLS el núcleo solo deja la URL progresiva → **640×360**. Para HD hay que portar el módulo SABR
-    de SmartTube a Media3 (entrega 4) o usar su ExoPlayer.
-  - **Canal sin datos de cabecera**: `getChannelObserve` no entrega suscriptores ni descripción del
-    canal; el encabezado muestra solo el nombre.
-  - **Búsquedas sin canal**: algunos resultados no traen `channelId`; al abrir Canal se pide la
-    metadata del video. «Ocultar» no filtra esos resultados (no se conoce su canal).
+  es 1,5 px por unidad. Así el diseño es igual en cualquier TV. El reproductor también usa
+  `Ui.px` (antes usaba `dp`).
+- **Pruebas unitarias**: `QualitiesTest` (agrupación de calidades y etiquetas) y `ManifestsTest`
+  (MPD dinámico a estático; directo con margen de segmentos). Corren con
+  `./gradlew :app:testDebugUnitTest`.
 
-## Decisiones de la entrega 2 (0.3.0)
+## Entrega 3 (0.4.0): lo que hay
 
-- **Medidas**: unidades del mockup escaladas al píxel real (`Ui.px`, `Ui.size`). No se usa `dp`.
-- **Teclado**: 30 teclas (a–z, ñ, 1–3) como pide la spec; el mockup tenía 28 (cortaba «2» y «3»).
-- **Tendencias en el Inicio** y **En vivo ahora**: la portada sin cuenta toma el primer grupo de
-  cada una. Con cuenta: «SEGUIR VIENDO» (historial) y luego cada grupo de `getHomeObserve`.
-- **Canal**: se omiten los grupos que son solo transmisiones en vivo; «MÁS RECIENTES» es el
-  primer grupo con videos y «MÁS VISTOS» el segundo. «Videos» enfoca las filas; «En vivo» y
-  «Listas» muestran «Pronto».
-- **Canal desde una tarjeta**: tecla Menú (probada) o mantener OK (implementada, no probada).
-- **Biblioteca sin cuenta**: «Inicia sesión para ver tu biblioteca.» (la spec decía lo mismo que
-  Suscripciones; se usó texto propio).
-- **Descripción** del detalle: de `getMetadataObserve` del video, pedida 350 ms después de que
-  el foco se detiene. «4K» no aparece en la línea tenue (no hay formato sin reproducir).
-- **Foco**: una línea (texto) o un marco (miniatura) que viajan con resorte; las tarjetas se
-  levantan 6 % con pivote abajo. Los contenedores de filas y resultados no son enfocables.
-- **Sin conexión**: el aviso «Sin conexión a internet…» está implementado (`checkNetwork` en
-  `onResume`), pero **no se verificó**: en el emulador el modo avión no cortó la red.
-- **Con cuenta**: las ramas (Historial, Suscripciones, Biblioteca, Inicio con cuenta) están
-  escritas según la spec, **no probadas** (no hay sesión hasta la entrega 3).
-- **Error de fila**: «No se pudo cargar. OK para reintentar.» implementado; no se provocó en el
-  emulador.
+- **Inicio sin cuenta**: la primera fila es la primera sección con videos, en este orden:
+  Música, Noticias, Deportes y Videojuegos (el rótulo toma el nombre de la que se use). «Tendencias»
+  ya no aparece: YouTube la retiró en 2025 (`getTrendingObserve` vuelve vacía). La segunda fila es
+  «En vivo ahora». Las filas quedan en top 340 y 535.
+- **Directos**: en este orden. (1) HLS si `getHlsManifestUrl()` viene. (2) DASH dinámico por URI
+  (`vibetube://mpd/<id>`) con `LiveSource`: cada pedido del manifiesto vuelve a llamar a
+  `createMpdStreamObservable()`, y los segmentos van por HTTP. El MPD se ajusta con
+  `Manifests.toLive`: el último segmento disponible según el reloj queda
+  `LIVE_EDGE_MARGIN_SEGMENTS` (3) segmentos antes del final de la línea de tiempo, y
+  `suggestedPresentationDelay` es `PT20S`. (3) Si el directo falla, un solo reintento con
+  `player.prepare()` (vuelve a pedir el manifiesto); si vuelve a fallar, el OSD dice «Este directo
+  no se pudo abrir» y vuelve atrás a los 3 s. Los videos normales siguen con DASH estático
+  (`Manifests.toStatic`).
+- **Cuenta** (`AccountActivity`, pestaña «Cuenta» al final): código de dispositivo con la URL y el
+  código reales del servicio; espera la confirmación en segundo plano; al confirmar vuelve.
+  Con sesión: nombre con punto verde, cuentas guardadas (se elige una), «Agregar otra cuenta» y
+  «Cerrar sesión» en rosa. Se llega también desde «Iniciar sesión» (Suscripciones y Biblioteca),
+  desde «Me gusta», «Guardar» y «Suscribirse» sin cuenta.
+- **Reproduciendo** (`PlayerActivity`): eyebrow «canal · vistas · fecha», título 40, barra cian de
+  420 con marcas de capítulo, «Después» con el siguiente sugerido, acciones en una fila de 760:
+  Me gusta · cantidad, Guardar, Subtítulos, Calidad, Velocidad, Ir al canal. A la derecha, reloj
+  de 64, fecha y la línea técnica, alineada con la barra (corrección de la v1). «Subtítulos» y
+  «Velocidad» ciclan con OK. Con cuenta: Me gusta y Guardar cambian, y la posición se guarda cada
+  30 s y al salir (`updateHistoryPositionObserve`).
+- **Calidad**: franja abajo con pantallas anidadas (una por resolución, la mayor abajo a la
+  izquierda; verde con relleno la que suena; blanca la que tiene el foco). Auto por defecto. Si
+  hay variantes del mismo alto (1080p60 y 1080p), ◀ ▶ sobre la pantalla cambian cuál; el detalle
+  muestra cuál. Se aplica con `TrackSelectionOverride`. Audio: las pistas del reproductor.
+- **Canal**: «Suscribirse» sin cuenta lleva a Cuenta; con cuenta se suscribe o se quita.
 
-## Reproductor (arreglo en 0.3.0, commit aparte)
+## Decisiones tomadas fuera de la especificación
 
-- Para videos que no son en vivo, el MPD que entrega el núcleo se marca `type="static"` antes de
-  parsearlo (`PlayerActivity.source`). Probado en el emulador: un video de búsqueda («PAN AMASADO
-  RÁPIDO…») y uno de un canal («Investigan hallazgo…», 640 × 360 · 30 fps · H.264) reproducen.
+- **Cuenta por código**: el núcleo no expone la URL ni `isSignedObserve()` para YouTube (el
+  inicio de sesión que las trae, `GoogleSignInService`, no está conectado al contenido). La app
+  pide el código con `AuthService.getUserCode()` (URL y código reales) y guarda la cuenta
+  replicando la lógica pública de `persistRefreshToken` (`Session.addAccount`). `isSignedObserve()`
+  es un `Observable` que envuelve `isSigned()`.
+- **Guardar** = agregar o quitar el video de «Ver más tarde» (la primera lista de
+  `getPlaylistsInfoObserve`).
+- **Me gusta** usa un ítem mínimo con el id del video (`Session.item`): el núcleo solo lee el id.
+- **Foco en el OSD**: al empezar no hay foco en ninguna acción. OK pausa; Abajo entra a las
+  acciones (y las deja enfocables, `armActions`); arriba sale y las vuelve a dejar sin foco. Así
+  Android no le da el foco inicial a «Me gusta».
+- **Clic fantasma**: `ClickGuard` descarta en Reproductor, Cuenta y Canal el ACTION_UP de OK (o
+  del botón A, o Enter) que llega sin su ACTION_DOWN en esa pantalla: es el UP de la tecla que la
+  abrió.
+- **◀ ▶ en las acciones**: `moveAction` pasa a la acción vecina enfocable y no adelanta ni atrasa
+  el video. Fuera de la fila, ◀ ▶ siguen adelantando y atrasando 10 s.
+- **Calidad**: el ancho de cada pantalla es proporcional a su alto frente a la mayor (mínimo 56).
+- **Al confirmar la cuenta** la pantalla se cierra y Inicio se vuelve a armar. Si se entró desde el
+  reproductor, vuelve al reproductor.
+
+## Limitaciones conocidas
+
+- **Sin cuenta, Inicio solo tiene lo que el núcleo entrega sin sesión** (ver arriba).
+- **SABR**: los videos que solo llegan por SABR no reproducen (entrega 4).
+- **Subtítulos**: se ciclan las pistas que el reproductor reciba del video. El núcleo no entrega
+  subtítulos en el MPD; por eso hoy suelen decir «no hay».
+- **Con cuenta** (Inicio con historial, Suscripciones, Biblioteca, Me gusta, Guardar, Suscribirse y
+  posición): el código está escrito; la prueba con una cuenta la hace el revisor.
+- **Canal sin datos de cabecera**: `getChannelObserve` no entrega suscriptores ni descripción del
+  canal.
+- **Búsquedas sin canal**: algunos resultados no traen `channelId`.
 
 ## Pendiente
 
-1. Decidir qué poner en la fila «TENDENCIAS EN CHILE» si YouTube no entrega Tendencias
-   (hoy: «Sin videos por ahora.»).
-2. Reproducción de directos (DASH dinámico o HLS) y de videos sin formato progresivo; hoy fallan.
-3. Entrega 3 (0.4.0): Cuenta, Reproduciendo y Calidad. Aquí se prueban las ramas con cuenta.
-4. Entrega 4 (0.5.0): HD con SABR. Decidir si se porta el lector SABR a Media3 o se usa el
-   ExoPlayer de SmartTube; `release.yml` con APK firmado.
-5. Repositorio `SPxMM3R1/vibetube` en GitHub, con tag y release: lo hace el revisor.
+1. Entrega 4 (0.5.0): HD con SABR en Media3 (módulo `:sabr`) y `release.yml`.
+2. Actualizador (entrega 4).
+3. Repositorio `SPxMM3R1/vibetube` en GitHub, con tag y release: lo hace el revisor.
+4. Prueba con cuenta real (inicio por código, varias cuentas, Me gusta, Guardar, posición): la hace
+   el revisor.
 
 ## Bitácora (más reciente arriba)
 
+- 2026-11-15 — 0.4.0, segunda ronda de correcciones (sin emulador: lo prueba el revisor). A:
+  `Manifests.toLive` con `LIVE_EDGE_MARGIN_SEGMENTS = 3` y `PT20S`; `ManifestsTest` ajustado y
+  con una prueba de línea corta; `PlayerActivity` registra el código HTTP y la URI (200 caracteres)
+  y reintenta un directo una vez; el reintento se rearma al empezar a sonar. B: `ClickGuard` en
+  Reproductor, Cuenta y Canal; las acciones del OSD no tienen foco inicial. C: ◀ ▶ entre acciones
+  con `moveAction`. Se entrega junto con la entrega 3, que quedaba sin commit.
+- 2026-11-15 — 0.4.0: Entrega 3. Inicio sin Tendencias (primera sección con videos), directos por
+  HLS o DASH dinámico con `LiveSource`, pestaña Cuenta con inicio por código y varias cuentas,
+  Reproduciendo con el OSD del mockup (760 dp de acciones, línea técnica a la altura de la barra),
+  Calidad con pantallas anidadas y `TrackSelectionOverride`. Clases nuevas: `Session`,
+  `AccountActivity`, `LiveSource`, `Qualities`, `Manifests`. `PlayerActivity` reescrita.
+  `RowsView.Section` y `Row.loadSection`. Pruebas JVM de `Qualities` y `Manifests`.
 - 2026-11-15 — 0.3.0: Entrega 2. Inicio (pestañas, detalle, dos filas de alto fijo, sin cuenta
   con Tendencias y En vivo), Buscar (teclado propio, sugerencias, búsqueda con retardo, dictado
   con `RecognizerIntent`), Canal (acciones, «MÁS RECIENTES» y «MÁS VISTOS», ocultar canal en

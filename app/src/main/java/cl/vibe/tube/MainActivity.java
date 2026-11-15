@@ -23,6 +23,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.liskovsoft.mediaserviceinterfaces.ContentService;
+import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItem;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata;
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
@@ -31,9 +32,11 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import io.reactivex.Observable;
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.CompositeDisposable;
 import io.reactivex.disposables.Disposable;
@@ -55,7 +58,8 @@ public class MainActivity extends Activity implements Tiles.Actions {
     static final int TAB_LIVE = 2;
     static final int TAB_LIBRARY = 3;
     static final int TAB_SEARCH = 4;
-    private static final String[] TAB_NAMES = {"Inicio", "Suscripciones", "En vivo", "Biblioteca", "Buscar"};
+    static final int TAB_ACCOUNT = 5;
+    private static final String[] TAB_NAMES = {"Inicio", "Suscripciones", "En vivo", "Biblioteca", "Buscar", "Cuenta"};
     /** Inicio, Suscripciones, En vivo y Biblioteca comparten la forma: detalle arriba y filas abajo. */
     private static final int ROWS_TOP = 340;
     /**
@@ -89,6 +93,7 @@ public class MainActivity extends Activity implements Tiles.Actions {
     private Focus focus;
     private Disposable metaRequest;
     private MediaItem current;
+    /** Si la cuenta estaba iniciada al armar la pantalla; si cambia, Inicio se vuelve a armar. */
     private boolean signed;
     private int hiddenVersion;
     private int tab = -1;
@@ -112,7 +117,7 @@ public class MainActivity extends Activity implements Tiles.Actions {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Ui.init(this);
-        signed = YouTubeServiceManager.instance().getSignInService().isSigned();
+        signed = Session.isSigned();
         hiddenVersion = Hidden.version();
         root = buildRoot();
         setContentView(root);
@@ -126,7 +131,8 @@ public class MainActivity extends Activity implements Tiles.Actions {
     protected void onResume() {
         super.onResume();
         // Si se ocultó o mostró un canal en la página de Canal, las filas ya cargadas no lo saben: se rehacen.
-        if (Hidden.version() != hiddenVersion) {
+        // Lo mismo si la cuenta cambió en la pantalla de Cuenta: Inicio vuelve a armarse, ya con sesión.
+        if (Hidden.version() != hiddenVersion || Session.isSigned() != signed) {
             recreate();
             return;
         }
@@ -180,7 +186,11 @@ public class MainActivity extends Activity implements Tiles.Actions {
         for (int i = 0; i < TAB_NAMES.length; i++) {
             final int which = i;
             TextView view = Ui.option(this, Focus.LINE, TAB_NAMES[i], 16);
-            view.setOnClickListener(v -> select(which));
+            // «Cuenta» no es una pantalla de filas: abre la pantalla de Cuenta.
+            view.setOnClickListener(v -> {
+                if (which == TAB_ACCOUNT) openAccount();
+                else select(which);
+            });
             view.setId(View.generateViewId());
             tabs[i] = view;
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
@@ -245,7 +255,7 @@ public class MainActivity extends Activity implements Tiles.Actions {
         text.setText(message);
         box.addView(text);
         TextView action = Ui.option(this, Focus.LINE, "Iniciar sesión", 16);
-        action.setOnClickListener(v -> Toast.makeText(this, "Pronto", Toast.LENGTH_SHORT).show());
+        action.setOnClickListener(v -> openAccount());
         LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-2, -2);
         actionParams.topMargin = Ui.px(14);
         box.addView(action, actionParams);
@@ -336,10 +346,33 @@ public class MainActivity extends Activity implements Tiles.Actions {
             home.row("Seguir viendo", false).load(() -> service.getHistoryObserve().map(Tiles::items));
             home.groups(service::getHomeObserve, false);
         } else {
-            // Sin cuenta YouTube no entrega el inicio: tendencias y en vivo.
-            home.row("Tendencias en Chile", false).load(() -> service.getTrendingObserve().map(Tiles::firstItems));
+            // Sin cuenta YouTube no entrega el inicio. Tendencias ya no existe (la retiró YouTube en
+            // 2025): la primera fila es la primera sección con videos, y la segunda, los directos.
+            loadFirstSection(home.row("", false), service);
             home.row("En vivo ahora", true).load(() -> service.getLiveObserve().map(Tiles::firstItems));
         }
+    }
+
+    /** Música, Noticias, Deportes o Videojuegos: la primera que traiga videos da la fila. */
+    private void loadFirstSection(RowsView.Row row, ContentService service) {
+        row.loadSection(Observable.concat(
+                section("Música", service.getMusicObserve()),
+                section("Noticias", service.getNewsObserve()),
+                section("Deportes", service.getSportsObserve()),
+                section("Videojuegos", service.getGamingObserve()))
+                .filter(section -> !section.items.isEmpty())
+                .take(1));
+    }
+
+    /** Una sección con su nombre; si falla, cuenta como vacía y se pasa a la siguiente. */
+    private static Observable<RowsView.Section> section(String label, Observable<List<MediaGroup>> source) {
+        return source
+                .map(groups -> new RowsView.Section(label, Tiles.firstItems(groups)))
+                .onErrorReturnItem(new RowsView.Section(label, new ArrayList<MediaItem>()));
+    }
+
+    private void openAccount() {
+        startActivity(new Intent(this, AccountActivity.class));
     }
 
     private static ContentService content() {
@@ -358,7 +391,9 @@ public class MainActivity extends Activity implements Tiles.Actions {
         Intent intent = new Intent(this, PlayerActivity.class)
                 .putExtra(PlayerActivity.EXTRA_VIDEO_ID, item.getVideoId())
                 .putExtra(PlayerActivity.EXTRA_TITLE, safe(item.getTitle()))
-                .putExtra(PlayerActivity.EXTRA_AUTHOR, safe(item.getAuthor()));
+                .putExtra(PlayerActivity.EXTRA_AUTHOR, safe(item.getAuthor()))
+                .putExtra(PlayerActivity.EXTRA_CHANNEL_ID, item.getChannelId())
+                .putExtra(PlayerActivity.EXTRA_IMAGE, background(item));
         startActivity(intent);
     }
 

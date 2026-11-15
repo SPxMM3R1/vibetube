@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -15,6 +16,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.liskovsoft.mediaserviceinterfaces.MediaItemService;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItem;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata;
@@ -23,6 +25,7 @@ import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.reactivex.Observable;
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.CompositeDisposable;
 import io.reactivex.schedulers.Schedulers;
@@ -41,6 +44,8 @@ public class ChannelActivity extends Activity implements Tiles.Actions {
     private static final int ROWS_HEIGHT = 470;
 
     private final CompositeDisposable disposables = new CompositeDisposable();
+    /** Descarta el ACTION_UP de OK (o de la pulsación larga) que abrió esta pantalla. */
+    private final ClickGuard clicks = new ClickGuard();
     private String channelId;
     private String videoId;
     private FrameLayout root;
@@ -52,6 +57,8 @@ public class ChannelActivity extends Activity implements Tiles.Actions {
     private RowsView.Row recent;
     private RowsView.Row most;
     private Focus focus;
+    /** Si la cuenta ya está suscrita a este canal. */
+    private boolean subscribed;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,6 +104,13 @@ public class ChannelActivity extends Activity implements Tiles.Actions {
         super.onDestroy();
     }
 
+    /** Descarta el ACTION_UP de OK que llega sin su DOWN (la tecla que abrió esta pantalla). */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (clicks.discard(event)) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
     private LinearLayout header(String name) {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
@@ -116,7 +130,7 @@ public class ChannelActivity extends Activity implements Tiles.Actions {
         LinearLayout subscribeBox = new LinearLayout(this);
         subscribeBox.setGravity(Gravity.CENTER_VERTICAL);
         subscribe = Ui.option(this, Focus.LINE, "Suscribirse", 16);
-        subscribe.setOnClickListener(v -> pending());
+        subscribe.setOnClickListener(v -> toggleSubscription());
         subscribeBox.addView(subscribe, new LinearLayout.LayoutParams(-2, -2));
         subscribedDot = new View(this);
         GradientDrawable dot = new GradientDrawable();
@@ -207,11 +221,41 @@ public class ChannelActivity extends Activity implements Tiles.Actions {
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(meta -> {
                     MediaItemMetadata data = meta;
-                    boolean on = data != null && data.isSubscribed();
-                    subscribe.setText(on ? "Suscrito" : "Suscribirse");
-                    Ui.markSelected(subscribe, on);
-                    subscribedDot.setVisibility(on ? View.VISIBLE : View.GONE);
+                    subscribed = data != null && data.isSubscribed();
+                    renderSubscription();
                 }, error -> Log.w(MainActivity.TAG, "Sin estado de suscripción", error)));
+    }
+
+    /**
+     * Sin cuenta, «Suscribirse» lleva a la pantalla de Cuenta. Con cuenta es un estado: se suscribe
+     * o se quita, y se marca «Suscrito» con el punto verde.
+     */
+    private void toggleSubscription() {
+        if (!Session.isSigned()) {
+            startActivity(new Intent(this, AccountActivity.class));
+            return;
+        }
+        if (TextUtils.isEmpty(channelId)) return;
+        MediaItemService service = YouTubeServiceManager.instance().getMediaItemService();
+        Observable<Void> call = subscribed
+                ? service.unsubscribeObserve(channelId)
+                : service.subscribeObserve(channelId);
+        disposables.add(call.subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(ignored -> {
+                }, error -> {
+                    Log.w(MainActivity.TAG, "No se cambió la suscripción", error);
+                    Toast.makeText(this, "No se pudo cambiar la suscripción", Toast.LENGTH_SHORT).show();
+                }, () -> {
+                    subscribed = !subscribed;
+                    renderSubscription();
+                }));
+    }
+
+    private void renderSubscription() {
+        subscribe.setText(subscribed ? "Suscrito" : "Suscribirse");
+        Ui.markSelected(subscribe, subscribed);
+        subscribedDot.setVisibility(subscribed ? View.VISIBLE : View.GONE);
     }
 
     private void toggleHidden() {

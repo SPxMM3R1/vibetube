@@ -49,18 +49,43 @@ final class Focus implements ViewTreeObserver.OnGlobalFocusChangeListener {
             line.hide();
             moveSoon(newFocus, RING);
         } else {
-            line.hide();
-            ring.hide();
+            hideAll();
         }
     }
 
-    /** Se mueve ya y otra vez al terminar el desplazamiento de la fila o la pantalla. */
+    /** Oculta la línea y el marco (por ejemplo, cuando el OSD se esconde y no hay foco). */
+    void hideAll() {
+        line.hide();
+        ring.hide();
+    }
+
+    /**
+     * Se mueve ya; después, otra vez al terminar el desplazamiento de la fila o la pantalla y cada
+     * vez que cambie el tamaño del foco (texto que crece, negrita o cuenta nueva): así la línea
+     * mide siempre lo que se ve.
+     */
     private void moveSoon(View target, int mode) {
         move(target, mode);
         root.postDelayed(() -> {
             if (target.hasFocus()) move(target, mode);
         }, 420);
+        if (tracked != target) {
+            if (tracked != null) tracked.removeOnLayoutChangeListener(relayout);
+            tracked = target;
+            target.addOnLayoutChangeListener(relayout);
+        }
+        trackedMode = mode;
     }
+
+    /** El foco que se vuelve a medir al cambiar de tamaño, y su modo. */
+    private View tracked;
+    private int trackedMode;
+
+    /** Vuelve a medir el foco cuando su tamaño cambia, mientras lo tenga. */
+    private final View.OnLayoutChangeListener relayout = (view, left, top, right, bottom,
+                                                          oldLeft, oldTop, oldRight, oldBottom) -> {
+        if (view == tracked && view.hasFocus()) move(view, trackedMode);
+    };
 
     private void move(View target, int mode) {
         if (mode == LINE) line.moveTo(target, LINE);

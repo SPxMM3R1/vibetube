@@ -8,8 +8,8 @@ android {
         applicationId 'cl.vibe.tube'
         minSdkVersion 21
         targetSdkVersion 34
-        versionCode 3
-        versionName '0.3.0'
+        versionCode 4
+        versionName '0.4.0'
         multiDexEnabled true
         // El núcleo trae sabores (stbeta, ststable, stfdroid): usamos el estable.
         missingDimensionStrategy 'default', 'ststable'
@@ -46,4 +46,7 @@ dependencies {
     implementation "androidx.media3:media3-exoplayer-dash:$media3"
     implementation "androidx.media3:media3-exoplayer-hls:$media3"
     implementation "androidx.media3:media3-ui:$media3"
+
+    // Pruebas JVM de la lógica pura (calidades y manifiestos).
+    testImplementation 'junit:junit:4.13.2'
 }

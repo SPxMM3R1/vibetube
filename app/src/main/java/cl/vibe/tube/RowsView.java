@@ -37,6 +37,17 @@ final class RowsView extends FrameLayout {
         Observable<List<MediaGroup>> groups();
     }
 
+    /** Una sección del inicio: su nombre y sus videos (vacía si no trae ninguno). */
+    static final class Section {
+        final String label;
+        final List<MediaItem> items;
+
+        Section(String label, List<MediaItem> items) {
+            this.label = label;
+            this.items = items;
+        }
+    }
+
     static final int ROW_HEIGHT = 187;
     static final int STRIP_HEIGHT = 161;
     static final int ROW_GAP = 8;
@@ -185,6 +196,7 @@ final class RowsView extends FrameLayout {
         final LinearLayout root;
         final LinearLayout strip;
         final String label;
+        private TextView titleView;
 
         Row(String label, boolean live) {
             this.label = label;
@@ -204,7 +216,8 @@ final class RowsView extends FrameLayout {
                 dotParams.setMarginEnd(Ui.px(8));
                 head.addView(dot, dotParams);
             }
-            head.addView(Ui.label(context, label), new LinearLayout.LayoutParams(-2, -2));
+            titleView = Ui.label(context, label);
+            head.addView(titleView, new LinearLayout.LayoutParams(-2, -2));
             root.addView(head, new LinearLayout.LayoutParams(-1, Ui.px(14)));
 
             HorizontalScrollView scroller = new HorizontalScrollView(context);
@@ -253,6 +266,38 @@ final class RowsView extends FrameLayout {
             TextView view = Ui.option(context, Focus.LINE, "No se pudo cargar. OK para reintentar.", 15);
             view.setOnClickListener(v -> retry.run());
             strip.addView(view);
+        }
+
+        /** Cambia el rótulo de la fila (la primera sección con videos trae su nombre). */
+        void rename(String text) {
+            titleView.setText(text);
+        }
+
+        /**
+         * Carga la fila con la primera sección que tenga videos; el rótulo toma el nombre de esa
+         * sección. Si ninguna trae videos, la fila dice que no hay.
+         */
+        void loadSection(Observable<Section> source) {
+            loading();
+            final boolean[] received = {false};
+            disposables.add(source
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(section -> {
+                        received[0] = true;
+                        rename(section.label);
+                        fill(section.items);
+                        focusIfWanted();
+                    }, error -> {
+                        Log.e(MainActivity.TAG, "Falló la sección de inicio", error);
+                        fail(() -> loadSection(source));
+                    }, () -> {
+                        if (!received[0]) {
+                            rename("Videos");
+                            fill(new ArrayList<MediaItem>());
+                            focusIfWanted();
+                        }
+                    }));
         }
 
         void load(Source source) {
