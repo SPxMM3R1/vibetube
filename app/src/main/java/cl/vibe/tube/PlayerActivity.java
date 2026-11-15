@@ -17,6 +17,7 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
@@ -560,6 +561,9 @@ public class PlayerActivity extends Activity {
     /** Una acción del OSD: texto suelto con la línea de foco. */
     private TextView actionView() {
         TextView view = Ui.option(this, Focus.LINE, "", 16);
+        // Crece hacia la derecha desde su borde izquierdo: al tomar el foco no se corre a la izquierda.
+        view.setTag(R.id.anchor_left, Boolean.TRUE);
+        view.setPivotX(0f);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
         params.setMarginEnd(Ui.px(22));
         actions.addView(view, params);
@@ -638,7 +642,8 @@ public class PlayerActivity extends Activity {
             if (info.isLive()) {
                 // Directo: el MPD «dynamic» se pide por URI; Media3 lo vuelve a pedir en cada refresco.
                 DataSource.Factory factory = LiveSource.factory(http,
-                        () -> info.createMpdStreamObservable().blockingFirst());
+                        () -> info.createMpdStreamObservable().blockingFirst(),
+                        info.getStartTimeMs(), info.getStartSegmentNum(), info.getSegmentDurationUs());
                 return new DashMediaSource.Factory(factory)
                         .createMediaSource(androidx.media3.common.MediaItem.fromUri(LiveSource.uri(videoId)));
             }
@@ -685,16 +690,19 @@ public class PlayerActivity extends Activity {
 
     /**
      * Si la causa del error es una respuesta HTTP que no es 2xx, deja en el log (tag VibeTube) el
-     * código y la URI del pedido, recortada, para saber qué segmento falló.
+     * código, la URI del pedido recortada y el número de segmento (parámetro sq), para saber qué
+     * segmento falló. El sq se toma de la URI completa: la recorte no lo borra.
      */
     private static void logHttpFailure(PlaybackException error) {
         Throwable cause = error;
         for (int depth = 0; cause != null && depth < 10; depth++) {
             if (cause instanceof HttpDataSource.InvalidResponseCodeException) {
                 HttpDataSource.InvalidResponseCodeException http = (HttpDataSource.InvalidResponseCodeException) cause;
-                String uri = http.dataSpec == null ? "" : String.valueOf(http.dataSpec.uri);
+                Uri full = http.dataSpec == null ? null : http.dataSpec.uri;
+                String uri = full == null ? "" : String.valueOf(full);
+                String sq = full == null ? null : full.getQueryParameter("sq");
                 if (uri.length() > LOG_URI_MAX) uri = uri.substring(0, LOG_URI_MAX);
-                Log.e(TAG, "HTTP " + http.responseCode + " al pedir " + uri);
+                Log.e(TAG, "HTTP " + http.responseCode + " al pedir " + uri + " sq=" + sq);
                 return;
             }
             cause = cause.getCause();
@@ -1174,15 +1182,35 @@ public class PlayerActivity extends Activity {
 
     /** ◀ ▶ con el foco en las acciones: pasa a la acción vecina enfocable; no se detiene en los bordes. */
     private void moveAction(int step) {
-        int at = actions.indexOfChild(getCurrentFocus());
+        // El foco puede estar en un descendiente de la acción: se sube hasta su hijo directo.
+        int at = actions.indexOfChild(directChildOf(actions, getCurrentFocus()));
         if (at < 0) return;
         for (int i = at + step; i >= 0 && i < actions.getChildCount(); i += step) {
-            View next = actions.getChildAt(i);
-            if (next.isFocusable()) {
-                next.requestFocus();
-                return;
+            View target = firstFocusable(actions.getChildAt(i));
+            if (target != null && target.requestFocus()) return;
+        }
+    }
+
+    /** El hijo directo de `group` que contiene a `view`, o null si `view` no está dentro de `group`. */
+    private static View directChildOf(ViewGroup group, View view) {
+        View cursor = view;
+        while (cursor != null && cursor.getParent() != group) {
+            cursor = cursor.getParent() instanceof View ? (View) cursor.getParent() : null;
+        }
+        return cursor;
+    }
+
+    /** La propia vista si es enfocable; si no, su primer descendiente enfocable (o null). */
+    private static View firstFocusable(View view) {
+        if (view.isFocusable()) return view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = firstFocusable(group.getChildAt(i));
+                if (found != null) return found;
             }
         }
+        return null;
     }
 
     private boolean inActions() {

@@ -14,10 +14,10 @@
   correcciones de esta misma versión (directos, clic fantasma y ◀ ▶; ver abajo).
 - **Probado en el emulador por el revisor** (APK de la primera corrección): título en 2 líneas;
   «DESPUÉS · 39:14»; eyebrow y «Seguir sin cuenta» sin recorte; «Subtítulos» atenuado.
-- **Pendiente de prueba del revisor** (APK de la segunda ronda, y lo que no está en la lista
-  anterior): el directo sin 404, el clic fantasma, ◀ ▶ entre acciones, el reintento de directo y su
-  cierre a los 3 s, y el resto de la entrega 3. Lo compiló y probó solo la JVM; no se usó el
-  emulador en esta ronda.
+- **Pendiente de prueba del revisor** (tercera ronda, sobre 9020bcc): el directo sin 404 (anclado
+  a la hora del primer segmento), ◀ ▶ entre acciones con «Me gusta» sin correrse, el clic fantasma,
+  el reintento de directo y su cierre a los 3 s, y el resto de la entrega 3. Lo compiló y probó
+  solo la JVM; no se usó el emulador en esta ronda.
 - **Idioma y región**: `es` / `CL`, fijados en `TubeApp.onCreate` antes de cualquier pedido.
 - **Repositorio**: solo local. El repositorio público `SPxMM3R1/vibetube`, las etiquetas y los
   releases los crea y publica el revisor. CI en `.github/workflows/android-ci.yml`.
@@ -38,9 +38,11 @@
 - **Directos**: en este orden. (1) HLS si `getHlsManifestUrl()` viene. (2) DASH dinámico por URI
   (`vibetube://mpd/<id>`) con `LiveSource`: cada pedido del manifiesto vuelve a llamar a
   `createMpdStreamObservable()`, y los segmentos van por HTTP. El MPD se ajusta con
-  `Manifests.toLive`: el último segmento disponible según el reloj queda
-  `LIVE_EDGE_MARGIN_SEGMENTS` (3) segmentos antes del final de la línea de tiempo, y
-  `suggestedPresentationDelay` es `PT20S`. (3) Si el directo falla, un solo reintento con
+  `Manifests.toLive(mpd, ahora, startTimeMs)`: `availabilityStartTime` queda anclado a la hora del
+  primer segmento del núcleo (`getStartTimeMs()`) más `LIVE_EDGE_MARGIN_SEGMENTS` (3) segmentos;
+  sin esa hora (respaldo), se calcula desde «ahora» con tope de 24 h. Se quita el
+  `SegmentTimeline`; `suggestedPresentationDelay` es `PT20S`. Cada directo registra una línea
+  `Directo: start=… startTimeMs=… segUs=… ast=…` y cada HTTP fallido registra el parámetro `sq`. (3) Si el directo falla, un solo reintento con
   `player.prepare()` (vuelve a pedir el manifiesto); si vuelve a fallar, el OSD dice «Este directo
   no se pudo abrir» y vuelve atrás a los 3 s. Los videos normales siguen con DASH estático
   (`Manifests.toStatic`).
@@ -78,7 +80,9 @@
   del botón A, o Enter) que llega sin su ACTION_DOWN en esa pantalla: es el UP de la tecla que la
   abrió.
 - **◀ ▶ en las acciones**: `moveAction` pasa a la acción vecina enfocable y no adelanta ni atrasa
-  el video. Fuera de la fila, ◀ ▶ siguen adelantando y atrasando 10 s.
+  el video. Sube desde el foco hasta el hijo directo de la fila y, si ese hijo es un grupo, pide el
+  foco a su primer descendiente enfocable. Fuera de la fila, ◀ ▶ siguen adelantando y atrasando 10 s.
+  Las acciones crecen desde su borde izquierdo (`anchor_left` en `Ui.restyle`), como en el mockup.
 - **Calidad**: el ancho de cada pantalla es proporcional a su alto frente a la mayor (mínimo 56).
 - **Al confirmar la cuenta** la pantalla se cierra y Inicio se vuelve a armar. Si se entró desde el
   reproductor, vuelve al reproductor.
@@ -105,6 +109,14 @@
 
 ## Bitácora (más reciente arriba)
 
+- 2026-11-15 — 0.4.0, tercera ronda de correcciones (sin emulador: lo prueba el revisor). A: el
+  directo ya no supone que el final de la línea de tiempo es el borde. `Manifests.toLive(mpd, ahora,
+  startTimeMs)` ancla `availabilityStartTime` a `getStartTimeMs()` del primer segmento más 3
+  segmentos; sin esa hora usa el respaldo con tope de 24 h. Se quitó el `SegmentTimeline`.
+  `LiveSource` recibe la hora, el número y la duración del segmento, y registra una vez la línea
+  `Directo: …`. El log de HTTP suma el `sq`. B: ◀ ▶ entre acciones busca el hijo directo desde el
+  foco, y «Me gusta» crece desde su borde izquierdo. Pruebas JVM: 13 de `ManifestsTest`, 6 de
+  `QualitiesTest`.
 - 2026-11-15 — 0.4.0, segunda ronda de correcciones (sin emulador: lo prueba el revisor). A:
   `Manifests.toLive` con `LIVE_EDGE_MARGIN_SEGMENTS = 3` y `PT20S`; `ManifestsTest` ajustado y
   con una prueba de línea corta; `PlayerActivity` registra el código HTTP y la URI (200 caracteres)

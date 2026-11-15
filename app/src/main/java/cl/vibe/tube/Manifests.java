@@ -24,11 +24,13 @@ final class Manifests {
     /** Retraso sugerido respecto del borde en vivo. */
     static final String PRESENTATION_DELAY = "PT20S";
     /**
-     * Cuántos segmentos antes del final de la línea de tiempo queda el último disponible según el
-     * reloj. Pedir el último segmento publicado da 404: Media3 pide números posteriores a los que
-     * YouTube ya publicó.
+     * Cuántos segmentos se retrasa el último disponible respecto del inicio del primer segmento.
+     * Pedir el último segmento publicado da 404: Media3 pide números posteriores a los que YouTube
+     * ya publicó.
      */
     static final int LIVE_EDGE_MARGIN_SEGMENTS = 3;
+    /** Tope de la ventana de un directo en el núcleo: 24 h. */
+    private static final long DAY_SECONDS = 24 * 60 * 60;
 
     private Manifests() {}
 
@@ -43,33 +45,20 @@ final class Manifests {
     /**
      * Convierte el MPD «dynamic» de un directo en uno que Media3 acepta y que avanza con el reloj.
      *
-     * El núcleo deja un <SegmentTimeline> de 48 h que termina en el último segmento, sin
-     * availabilityStartTime. Aquí se quita la línea de tiempo (queda el SegmentTemplate con
-     * duration, startNumber, timescale, media y presentationTimeOffset) y se agrega el inicio de
-     * disponibilidad: «ahora» menos (r + 1 − LIVE_EDGE_MARGIN_SEGMENTS) segmentos. Así el último
-     * segmento disponible según el reloj queda tres segmentos antes del final de la línea de
-     * tiempo, y Media3 no pide números que el núcleo todavía no publicó (404). Con líneas de
-     * tiempo de menos de cuatro segmentos se deja al menos uno disponible. Si el MPD no tiene un
-     * <S> reconocible, se devuelve sin cambios.
+     * El núcleo deja un <SegmentTimeline> que no marca el borde en vivo, así que se quita (queda
+     * el SegmentTemplate con duration, startNumber, timescale, media y presentationTimeOffset) y
+     * se fija availabilityStartTime según availabilityStart. Se quitan también los atributos de
+     * ventana y retraso del núcleo, y se agregan timeShiftBufferDepth y suggestedPresentationDelay.
+     * Si el MPD no tiene un <S> reconocible, se devuelve sin cambios.
      *
-     * @param mpd    texto del MPD del núcleo
-     * @param nowMs  instante de referencia, en milisegundos desde la época UTC
+     * @param mpd         texto del MPD del núcleo
+     * @param nowMs       instante de referencia, en milisegundos desde la época UTC
+     * @param startTimeMs hora UNIX del primer segmento (startNumber) que entrega el núcleo, o 0 o
+     *                    menos si no la hay
      */
-    static String toLive(String mpd, long nowMs) {
-        Matcher first = FIRST_S.matcher(mpd);
-        if (!first.find()) return mpd;
-        Long d = attribute(first.group(1), "d");
-        if (d == null || d <= 0) return mpd;
-        long r = Math.max(0, valueOr(attribute(first.group(1), "r"), 0));
-
-        long timescale = 1;
-        Matcher template = SEGMENT_TEMPLATE.matcher(mpd);
-        if (template.find()) timescale = Math.max(1, valueOr(attribute(template.group(), "timescale"), 1));
-
-        // Segmentos ya disponibles según el reloj: (r + 1) menos el margen, al menos uno.
-        long available = Math.max(1, r + 1 - LIVE_EDGE_MARGIN_SEGMENTS);
-        long behindMs = available * d * 1000L / timescale;
-        String start = isoUtc(nowMs - behindMs);
+    static String toLive(String mpd, long nowMs, long startTimeMs) {
+        String start = availabilityStart(mpd, nowMs, startTimeMs);
+        if (start == null) return mpd;
 
         String out = TIMELINE.matcher(mpd).replaceAll("");
         Matcher tag = MPD_TAG.matcher(out);
@@ -80,6 +69,35 @@ final class Manifests {
                 + " timeShiftBufferDepth=\"" + TIME_SHIFT + "\""
                 + " suggestedPresentationDelay=\"" + PRESENTATION_DELAY + "\">";
         return out.substring(0, tag.start()) + open + out.substring(tag.end());
+    }
+
+    /**
+     * Inicio de disponibilidad (availabilityStartTime) del directo, en UTC con el formato de DASH,
+     * o null si el MPD no tiene un <S> reconocible.
+     *
+     * Con startTimeMs > 0 se ancla a la hora real del primer segmento y se retrasa
+     * LIVE_EDGE_MARGIN_SEGMENTS segmentos: el último disponible queda ese margen antes del borde.
+     * Sin startTimeMs (respaldo) se calcula desde «ahora»: min(r + 1, segmentos de 24 h) menos el
+     * margen, con mínimo un segmento.
+     */
+    static String availabilityStart(String mpd, long nowMs, long startTimeMs) {
+        Matcher first = FIRST_S.matcher(mpd);
+        if (!first.find()) return null;
+        Long d = attribute(first.group(1), "d");
+        if (d == null || d <= 0) return null;
+        long r = Math.max(0, valueOr(attribute(first.group(1), "r"), 0));
+
+        long timescale = 1;
+        Matcher template = SEGMENT_TEMPLATE.matcher(mpd);
+        if (template.find()) timescale = Math.max(1, valueOr(attribute(template.group(), "timescale"), 1));
+
+        if (startTimeMs > 0) {
+            return isoUtc(startTimeMs + LIVE_EDGE_MARGIN_SEGMENTS * d * 1000L / timescale);
+        }
+        // Respaldo: segmentos disponibles según el reloj, sin pasar de 24 h ni de la línea de tiempo.
+        long maxSegments = DAY_SECONDS * timescale / d;
+        long available = Math.max(1, Math.min(r + 1, maxSegments) - LIVE_EDGE_MARGIN_SEGMENTS);
+        return isoUtc(nowMs - available * d * 1000L / timescale);
     }
 
     /** Valor numérico de un atributo XML («name="123"»), o null si no está o no es número. */

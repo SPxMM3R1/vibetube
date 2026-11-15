@@ -109,7 +109,8 @@ final class Ui {
     static void restyle(TextView view, boolean focused, boolean selected) {
         view.setTextColor(focused || selected ? WHITE : MUTED);
         view.setTypeface(Typeface.create("sans-serif", focused ? Typeface.BOLD : Typeface.NORMAL));
-        view.setPivotX(view.getWidth() / 2f);
+        // Por defecto crece desde el centro; con anchor_left crece hacia la derecha y no corre el borde izquierdo.
+        view.setPivotX(Boolean.TRUE.equals(view.getTag(R.id.anchor_left)) ? 0f : view.getWidth() / 2f);
         view.setPivotY(view.getHeight() * 0.6f);
         view.animate().scaleX(focused ? 1.07f : 1f).scaleY(focused ? 1.07f : 1f)
                 .setInterpolator(SPRING).setDuration(350).start();
