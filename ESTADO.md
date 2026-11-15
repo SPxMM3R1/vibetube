@@ -14,10 +14,11 @@
   correcciones de esta misma versión (directos, clic fantasma y ◀ ▶; ver abajo).
 - **Probado en el emulador por el revisor** (APK de la primera corrección): título en 2 líneas;
   «DESPUÉS · 39:14»; eyebrow y «Seguir sin cuenta» sin recorte; «Subtítulos» atenuado.
-- **Pendiente de prueba del revisor** (tercera ronda, sobre 9020bcc): el directo sin 404 (anclado
-  a la hora del primer segmento), ◀ ▶ entre acciones con «Me gusta» sin correrse, el clic fantasma,
-  el reintento de directo y su cierre a los 3 s, y el resto de la entrega 3. Lo compiló y probó
-  solo la JVM; no se usó el emulador en esta ronda.
+- **Probado por el revisor en el emulador** (commit 71654d0): los directos Meganoticias y CHV
+  Noticias reproducen y avanzan; CHV en 1080p VP9.
+- **Pendiente de prueba del revisor** (cuarta corrección, sobre 71654d0): ◀ ▶ entre acciones y en la
+  franja de Calidad, el clic fantasma, el reintento de directo y su cierre a los 3 s, y el resto de
+  la entrega 3. Lo compiló y probó solo la JVM; no se usó el emulador en esta ronda.
 - **Idioma y región**: `es` / `CL`, fijados en `TubeApp.onCreate` antes de cualquier pedido.
 - **Repositorio**: solo local. El repositorio público `SPxMM3R1/vibetube`, las etiquetas y los
   releases los crea y publica el revisor. CI en `.github/workflows/android-ci.yml`.
@@ -81,7 +82,8 @@
   abrió.
 - **◀ ▶ en las acciones**: `moveAction` pasa a la acción vecina enfocable y no adelanta ni atrasa
   el video. Sube desde el foco hasta el hijo directo de la fila y, si ese hijo es un grupo, pide el
-  foco a su primer descendiente enfocable. Fuera de la fila, ◀ ▶ siguen adelantando y atrasando 10 s.
+  foco a su primer descendiente enfocable. Se atienden en `dispatchKeyEvent` (`handleArrowKey`), antes que las vistas: en el emulador
+  no llegaban al `onKeyDown`. Fuera de la fila, ◀ ▶ siguen adelantando y atrasando 10 s.
   Las acciones crecen desde su borde izquierdo (`anchor_left` en `Ui.restyle`), como en el mockup.
 - **Calidad**: el ancho de cada pantalla es proporcional a su alto frente a la mayor (mínimo 56).
 - **Al confirmar la cuenta** la pantalla se cierra y Inicio se vuelve a armar. Si se entró desde el
@@ -108,6 +110,12 @@
    el revisor.
 
 ## Bitácora (más reciente arriba)
+
+- 2026-11-15 — 0.4.0, cuarta corrección (sin emulador: lo prueba el revisor). A: ◀ ▶ se atienden en
+  `dispatchKeyEvent` (`handleArrowKey`) antes que las vistas, tanto en la fila de acciones
+  (`moveAction`, con `Log.d`) como en las variantes de Calidad (`cycleVariant`); se quitaron los
+  `OnKeyListener` de la franja y el bloque de ◀ ▶ de `onKeyDown`. B: el revisor probó los directos
+  en el emulador con 71654d0: Meganoticias y CHV Noticias reproducen y avanzan (CHV en 1080p VP9).
 
 - 2026-11-15 — 0.4.0, tercera ronda de correcciones (sin emulador: lo prueba el revisor). A: el
   directo ya no supone que el final de la línea de tiempo es el borde. `Manifests.toLive(mpd, ahora,

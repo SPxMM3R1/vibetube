@@ -909,19 +909,6 @@ public class PlayerActivity extends Activity {
             labelParams.setMargins(0, Ui.px(4), Ui.px(6), 0);
             box.addView(label, labelParams);
             box.setOnClickListener(v -> chooseVariant(index));
-            // ◀ ▶ sobre una pantalla con varias variantes (1080p60 y 1080p) cambian cuál es; el detalle muestra cuál.
-            box.setOnKeyListener((v, keyCode, event) -> {
-                int count = screens.get(index).variants.size();
-                if (event.getAction() == KeyEvent.ACTION_DOWN && count > 1
-                        && (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT)) {
-                    int step = keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : count - 1;
-                    pick[index] = (pick[index] + step) % count;
-                    refreshScreenLabels();
-                    showDetail(screens.get(index).variants.get(pick[index]));
-                    return true;
-                }
-                return false;
-            });
             screensBox.addView(box, new FrameLayout.LayoutParams(width, height, Gravity.BOTTOM | Gravity.START));
             screenBoxes[i] = box;
             screenLabels[i] = label;
@@ -1184,11 +1171,47 @@ public class PlayerActivity extends Activity {
     private void moveAction(int step) {
         // El foco puede estar en un descendiente de la acción: se sube hasta su hijo directo.
         int at = actions.indexOfChild(directChildOf(actions, getCurrentFocus()));
-        if (at < 0) return;
+        if (at < 0) {
+            Log.d(TAG, "moveAction sin acción enfocada");
+            return;
+        }
         for (int i = at + step; i >= 0 && i < actions.getChildCount(); i += step) {
             View target = firstFocusable(actions.getChildAt(i));
-            if (target != null && target.requestFocus()) return;
+            if (target != null && target.requestFocus()) {
+                Log.d(TAG, "moveAction de " + at + " a " + i);
+                return;
+            }
         }
+    }
+
+    /**
+     * ◀ ▶ con el foco en la fila de acciones (cambia de acción) o en una pantalla de Calidad con
+     * varias variantes (cambia cuál es; el detalle muestra cuál). Se atiende aquí, antes que las
+     * vistas: en el emulador el foco no se movía cuando la tecla llegaba al onKeyDown del Activity.
+     * Devuelve true si la tecla quedó atendida (en DOWN se actúa; en UP solo se consume).
+     */
+    private boolean handleArrowKey(KeyEvent event) {
+        int keyCode = event.getKeyCode();
+        if (keyCode != KeyEvent.KEYCODE_DPAD_LEFT && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+        int step = keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1;
+        boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
+        if (panelOpen) {
+            int index = screenIndexOf(getCurrentFocus());
+            if (index < 0 || screens.get(index).variants.size() < 2) return false;
+            if (down) cycleVariant(index, step);
+            return true;
+        }
+        if (!inActions()) return false;
+        if (down) moveAction(step);
+        return true;
+    }
+
+    /** Cambia la variante marcada de una pantalla de Calidad y muestra su detalle. */
+    private void cycleVariant(int index, int step) {
+        int count = screens.get(index).variants.size();
+        pick[index] = ((pick[index] + step) % count + count) % count;
+        refreshScreenLabels();
+        showDetail(screens.get(index).variants.get(pick[index]));
     }
 
     /** El hijo directo de `group` que contiene a `view`, o null si `view` no está dentro de `group`. */
@@ -1221,6 +1244,7 @@ public class PlayerActivity extends Activity {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (clicks.discard(event)) return true;
+        if (handleArrowKey(event)) return true;
         return super.dispatchKeyEvent(event);
     }
 
@@ -1253,11 +1277,7 @@ public class PlayerActivity extends Activity {
                 hideSoon();
                 return true;
             }
-            // Con el foco en la fila de acciones, ◀ ▶ solo cambian de acción: nunca adelantan ni atrasan.
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                moveAction(keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
-                return true;
-            }
+            // ◀ ▶ con el foco en la fila lo atiende dispatchKeyEvent (handleArrowKey); no llegan aquí.
             return super.onKeyDown(keyCode, event);
         }
         switch (keyCode) {
