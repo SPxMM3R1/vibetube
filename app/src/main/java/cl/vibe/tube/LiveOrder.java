@@ -5,13 +5,16 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Orden de las fuentes de un directo: primero DASH dinámico (con {@link LiveSource}), después HLS.
- * El HLS de este cliente se queda colgado en algunos directos, por eso va segundo (decisión del
- * revisor, 2026-11-15). Si ninguna fuente sirve, la lista queda vacía y no hay nada que probar.
+ * Orden de las fuentes de un directo, como en SmartTube (VideoLoaderController): primero el DASH
+ * generado desde los formatos (con {@link LiveSource}, solo si el núcleo trae la hora del primer
+ * segmento), después el DASH propio de YouTube por URL, y al final HLS. El HLS de YouTube solo
+ * funciona bien con el cliente iOS (lo comenta tubehaus en su servidor), por eso va al final.
+ * Si ninguna fuente sirve, la lista queda vacía y el directo no se puede abrir.
  */
 final class LiveOrder {
     enum Kind {
         DASH("DASH"),
+        DASH_URL("DASH de YouTube"),
         HLS("HLS");
 
         /** Nombre que aparece en el log (tag VibeTube). */
@@ -25,9 +28,16 @@ final class LiveOrder {
     private final List<Kind> kinds;
     private int index;
 
-    LiveOrder(boolean dash, boolean hls) {
-        List<Kind> list = new ArrayList<>(2);
-        if (dash) list.add(Kind.DASH);
+    /**
+     * @param dashFormats hay formatos DASH con los que armar el manifiesto generado
+     * @param startTimeMs hora UNIX del primer segmento del núcleo; el DASH generado solo se usa si es mayor que 0
+     * @param dashUrl     el núcleo trae la URL del DASH de YouTube
+     * @param hls         el núcleo trae la URL del HLS
+     */
+    LiveOrder(boolean dashFormats, long startTimeMs, boolean dashUrl, boolean hls) {
+        List<Kind> list = new ArrayList<>(3);
+        if (dashFormats && startTimeMs > 0) list.add(Kind.DASH);
+        if (dashUrl) list.add(Kind.DASH_URL);
         if (hls) list.add(Kind.HLS);
         kinds = Collections.unmodifiableList(list);
     }

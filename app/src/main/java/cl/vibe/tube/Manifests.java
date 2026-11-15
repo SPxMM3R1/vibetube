@@ -53,8 +53,9 @@ final class Manifests {
      *
      * @param mpd         texto del MPD del núcleo
      * @param nowMs       instante de referencia, en milisegundos desde la época UTC
-     * @param startTimeMs hora UNIX del primer segmento (startNumber) que entrega el núcleo, o 0 o
-     *                    menos si no la hay
+     * @param startTimeMs hora UNIX del primer segmento (startNumber) que entrega el núcleo. La app
+     *                    solo pide el directo con un valor mayor que 0 (LiveOrder); con 0 o menos la
+     *                    función sigue siendo tolerante y usa el respaldo desde «ahora», sin uso en la app
      */
     static String toLive(String mpd, long nowMs, long startTimeMs) {
         String start = availabilityStart(mpd, nowMs, startTimeMs);
@@ -77,8 +78,8 @@ final class Manifests {
      *
      * Con startTimeMs > 0 se ancla a la hora real del primer segmento y se retrasa
      * LIVE_EDGE_MARGIN_SEGMENTS segmentos: el último disponible queda ese margen antes del borde.
-     * Sin startTimeMs (respaldo) se calcula desde «ahora»: min(r + 1, segmentos de 24 h) menos el
-     * margen, con mínimo un segmento.
+     * Sin startTimeMs (respaldo, solo tolerancia: la app siempre tiene la hora) se calcula desde
+     * «ahora»: min(r + 1, segmentos de 24 h) menos el margen, con mínimo un segmento.
      */
     static String availabilityStart(String mpd, long nowMs, long startTimeMs) {
         Matcher first = FIRST_S.matcher(mpd);

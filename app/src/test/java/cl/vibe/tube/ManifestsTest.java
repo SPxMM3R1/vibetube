@@ -73,8 +73,11 @@ public class ManifestsTest {
         assertTrue(out.contains("availabilityStartTime=\"2027-01-15T07:58:35.000Z\""));
     }
 
+    // Los casos de respaldo (sin hora del primer segmento) son solo tolerancia: la app no pide un
+    // directo sin startTimeMs > 0 (LiveOrder), así que estas pruebas cuidan que la función no se rompa.
+
     @Test
-    public void directoRespaldoSinInicioAgregaInicioDeDisponibilidadTresSegmentosAntesDelFinal() {
+    public void respaldoSinInicioAgregaInicioDeDisponibilidadTresSegmentosAntesDelFinal() {
         // Sin inicio del núcleo: r = 10, 11 segmentos menos 3 de margen = 8 de 5 s = 40 s antes de «ahora».
         String out = Manifests.toLive(LIVE_MPD, NOW, 0);
         assertTrue(out.contains("availabilityStartTime=\"2027-01-15T07:59:20.000Z\""));
@@ -83,7 +86,7 @@ public class ManifestsTest {
     }
 
     @Test
-    public void inicioNegativoUsaElRespaldo() {
+    public void respaldoConInicioNegativoEsIgualQueSinInicio() {
         String out = Manifests.toLive(LIVE_MPD, NOW, -1);
         assertTrue(out.contains("availabilityStartTime=\"2027-01-15T07:59:20.000Z\""));
     }

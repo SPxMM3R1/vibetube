@@ -17,8 +17,9 @@
 - **Probado por el revisor en el emulador**: los directos Meganoticias y CHV Noticias reproducen y
   avanzan (commit 71654d0; CHV en 1080p VP9). Con 36028e8: ◀ ▶ entre acciones (log «moveAction de 0
   a 1», salta «Subtítulos») y la franja de Calidad con CHV (1080p, 5.4 Mbps, 30 fps).
-- **Pendiente de prueba del revisor** (séptima corrección, sobre 7a8ffc6): el orden de fuentes de
-  los directos (DASH antes que HLS, tope de 20 s), «Suscribirse» sin recorte en Canal y los demás
+- **Pendiente de prueba del revisor** (octava corrección, sobre 9ef9c14): el orden de fuentes de
+  los directos como SmartTube (DASH generado, DASH de YouTube y HLS, tope de 20 s). Antes, con la
+  séptima corrección (7a8ffc6 y 9ef9c14), «Suscribirse» sin recorte en Canal y los demás
   recortes de Inicio y Buscar. Sin emulador en esta ronda: lo compiló y probó solo la JVM. Antes,
   con la sexta corrección, quedaban por probar las etiquetas de Calidad y los rótulos de audio, el
   clic fantasma, el reintento de directo y su cierre a los 3 s, y el resto de la entrega 3.
@@ -39,12 +40,16 @@
   Música, Noticias, Deportes y Videojuegos (el rótulo toma el nombre de la que se use). «Tendencias»
   ya no aparece: YouTube la retiró en 2025 (`getTrendingObserve` vuelve vacía). La segunda fila es
   «En vivo ahora». Las filas quedan en top 340 y 535.
-- **Directos**: orden de fuentes decidido por el revisor el 2026-11-15, porque el HLS de este
-  cliente se queda colgado en algunos directos (Meganoticias «Siempre Juntos», `iezDsZhw9Mw`, se
-  quedaba en «CARGANDO» más de 60 s). Ahora: (1) DASH dinámico con `LiveSource` (por URI
-  `vibetube://mpd/<id>`), si `containsDashUrl()` o hay formatos DASH; (2) HLS si
-  `getHlsManifestUrl()` viene; (3) el OSD dice «Este directo no se pudo abrir» y vuelve atrás a los
-  3 s. El orden lo decide `LiveOrder` (clase pura con prueba `LiveOrderTest`).
+- **Directos**: orden de fuentes como en SmartTube (`VideoLoaderController`), decidido por el
+  revisor el 2026-11-15. El HLS de este cliente se queda colgado en algunos directos (Meganoticias
+  «Siempre Juntos», `iezDsZhw9Mw`, se quedaba en «CARGANDO» más de 60 s). Ahora:
+  (1) DASH generado desde los formatos con `LiveSource` (por URI `vibetube://mpd/<id>`), solo si
+  hay formatos DASH y `getStartTimeMs() > 0` (SmartTube lo salta sin esa hora); (2) DASH propio de
+  YouTube por URL (`getDashManifestUrl()`, con `DashMediaSource` normal), si `containsDashUrl()`;
+  (3) HLS (`getHlsManifestUrl()`); (4) el OSD dice «Este directo no se pudo abrir» y vuelve atrás
+  a los 3 s. El HLS de YouTube solo funciona bien con el cliente iOS (lo comenta tubehaus en su
+  servidor), por eso va al final. El orden lo decide `LiveOrder` (clase pura con prueba
+  `LiveOrderTest`). Sin lista de URLs para directos: si no hay ninguna fuente de las tres, falla.
   - **Tope de arranque**: 20 s desde cada `prepare()` sin primer cuadro (`onRenderedFirstFrame`) ni
     error; si hay otra fuente en el orden, pasa a ella (log `Directo: sin cuadro en 20 s, pruebo
     HLS`); si no, el paso (3). Al salir de la pantalla el tope se suspende y, al volver, se rearma
@@ -52,11 +57,12 @@
   - **Reintento**: ante error, un reintento con `player.prepare()` (como antes). Si también falla,
     se pasa a la fuente siguiente del orden (decisión propia: «mantén el reintento» se leyó como
     un reintento por fuente); si no hay otra, el paso (3).
-  - **Log**: cada fuente que arranca escribe `Directo por DASH` o `Directo por HLS` (tag VibeTube).
+  - **Log**: cada fuente que arranca escribe `Directo por DASH`, `Directo por DASH de YouTube` o
+    `Directo por HLS` (tag VibeTube).
     El DASH registra `Directo: start=… startTimeMs=… segUs=… ast=…` y cada HTTP fallido el `sq`.
     El DASH dinámico se ajusta con `Manifests.toLive(mpd, ahora, startTimeMs)`:
     `availabilityStartTime` queda anclado a la hora del primer segmento del núcleo
-    (`getStartTimeMs()`) más `LIVE_EDGE_MARGIN_SEGMENTS` (3) segmentos; sin esa hora (respaldo), se
+    (`getStartTimeMs()`) más `LIVE_EDGE_MARGIN_SEGMENTS` (3) segmentos; sin esa hora (solo tolerancia: la app no llega ahí), se
     calcula desde «ahora» con tope de 24 h. Se quita el `SegmentTimeline`;
     `suggestedPresentationDelay` es `PT20S`. Los videos normales siguen con DASH estático
     (`Manifests.toStatic`).
@@ -136,6 +142,15 @@
    el revisor.
 
 ## Bitácora (más reciente arriba)
+
+- 2026-11-15 — 0.4.0, octava corrección (sin emulador: lo prueba el revisor). A: el orden de fuentes
+  de los directos sigue a SmartTube (`VideoLoaderController`, como en la nota de Directos): DASH
+  generado solo con `getStartTimeMs() > 0`, después el DASH de YouTube por URL y al final HLS; si
+  no queda ninguna, «Este directo no se pudo abrir». Se quitó el DASH generado sin hora (respaldo
+  de `Manifests.toLive` queda solo como tolerancia). `LiveOrder` recibe los formatos, la hora, la
+  URL de DASH y el HLS; `LiveOrderTest` cubre `startTimeMs == 0` (salta a la URL de DASH o a HLS) y
+  sin URL de DASH. El tope de 20 s y el reintento único no cambian. Pruebas JVM con
+  `./gradlew :app:testDebugUnitTest`.
 
 - 2026-11-15 — 0.4.0, séptima corrección (sin emulador: lo prueba el revisor). A: directos en orden
   DASH dinámico y después HLS (`LiveOrder`, con `LiveOrderTest`), tope de 20 s sin primer cuadro

@@ -137,9 +137,9 @@ public class PlayerActivity extends Activity {
     private String wlId;
     private Disposable loading;
     private volatile boolean live;
-    /** Fuentes del directo, en orden (DASH y después HLS); vacía si el video no es un directo. */
-    private LiveOrder liveOrder = new LiveOrder(false, false);
-    /** Formatos del directo, para armar la fuente que toque (DASH o HLS). */
+    /** Fuentes del directo, en orden (DASH generado, DASH de YouTube y HLS); vacía si no es un directo. */
+    private LiveOrder liveOrder = new LiveOrder(false, 0, false, false);
+    /** Formatos del directo, para armar la fuente que toque. */
     private MediaItemFormatInfo liveInfo;
     /** Un directo que falla se vuelve a abrir una sola vez por fuente; se rearma al cambiar de fuente. */
     private boolean liveRetried;
@@ -635,9 +635,10 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * Elige la fuente. En un directo, el orden es DASH dinámico por URI y después HLS
-     * ({@link LiveOrder}); en un video normal, DASH estático. HLS o un archivo progresivo son el
-     * último recurso.
+     * Elige la fuente. En un directo, el orden es el de SmartTube (VideoLoaderController) y lo fija
+     * {@link LiveOrder}: DASH generado, DASH de YouTube por URL y HLS; si ninguna sirve, el directo
+     * no se puede abrir. En un video normal, DASH estático; HLS o un archivo progresivo son el último
+     * recurso.
      */
     private MediaSource source(MediaItemFormatInfo info) throws Exception {
         if (info.isUnplayable()) throw new IllegalStateException("No disponible: " + safe(info.getPlayabilityReason()));
@@ -653,10 +654,12 @@ public class PlayerActivity extends Activity {
             updateEyebrow();
         });
         if (info.isLive()) {
-            // Directo: DASH dinámico si hay, luego HLS. Si ninguna sirve, cae a los respaldos de abajo.
+            // Directo: sin fuente que sirva, no hay nada que probar (el mensaje lo pone fail()).
             liveInfo = info;
-            liveOrder = new LiveOrder(info.containsDashUrl() || info.containsDashFormats(), info.containsHlsUrl());
-            if (!liveOrder.isEmpty()) return liveSource();
+            liveOrder = new LiveOrder(info.containsDashFormats(), info.getStartTimeMs(),
+                    info.containsDashUrl(), info.containsHlsUrl());
+            if (liveOrder.isEmpty()) throw new IllegalStateException("El directo no trae fuentes reproducibles");
+            return liveSource();
         }
         DefaultHttpDataSource.Factory http = http();
         if (info.containsDashFormats()) {
@@ -700,7 +703,12 @@ public class PlayerActivity extends Activity {
         if (liveOrder.current() == LiveOrder.Kind.HLS) {
             return hls(http(), info.getHlsManifestUrl());
         }
-        // DASH dinámico: el MPD se pide por URI; Media3 lo vuelve a pedir en cada refresco.
+        if (liveOrder.current() == LiveOrder.Kind.DASH_URL) {
+            // DASH propio de YouTube, por URL: Media3 lo maneja como cualquier directo DASH.
+            return new DashMediaSource.Factory(http())
+                    .createMediaSource(androidx.media3.common.MediaItem.fromUri(info.getDashManifestUrl()));
+        }
+        // DASH generado: el MPD se pide por URI; Media3 lo vuelve a pedir en cada refresco.
         DataSource.Factory factory = LiveSource.factory(http(),
                 () -> info.createMpdStreamObservable().blockingFirst(),
                 info.getStartTimeMs(), info.getStartSegmentNum(), info.getSegmentDurationUs());
