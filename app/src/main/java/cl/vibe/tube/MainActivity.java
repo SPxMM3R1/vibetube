@@ -255,6 +255,8 @@ public class MainActivity extends Activity implements Tiles.Actions {
         text.setText(message);
         box.addView(text);
         TextView action = Ui.option(this, Focus.LINE, "Iniciar sesión", 16);
+        // Crece hacia la derecha desde su borde izquierdo: no se corta por la izquierda del aviso.
+        action.setTag(R.id.anchor_left, Boolean.TRUE);
         action.setOnClickListener(v -> openAccount());
         LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-2, -2);
         actionParams.topMargin = Ui.px(14);

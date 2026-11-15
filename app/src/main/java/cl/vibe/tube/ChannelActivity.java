@@ -114,6 +114,9 @@ public class ChannelActivity extends Activity implements Tiles.Actions {
     private LinearLayout header(String name) {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
+        // Las acciones crecen al tener el foco (1,07×): los padres de la fila no las recortan.
+        header.setClipChildren(false);
+        header.setClipToPadding(false);
         header.addView(Ui.eyebrow(this, "Canal", Ui.EYEBROW));
 
         TextView title = Ui.text(this, 52, Ui.WHITE, true);
@@ -127,9 +130,15 @@ public class ChannelActivity extends Activity implements Tiles.Actions {
 
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER_VERTICAL);
+        actions.setClipChildren(false);
+        actions.setClipToPadding(false);
         LinearLayout subscribeBox = new LinearLayout(this);
         subscribeBox.setGravity(Gravity.CENTER_VERTICAL);
+        subscribeBox.setClipChildren(false);
+        subscribeBox.setClipToPadding(false);
         subscribe = Ui.option(this, Focus.LINE, "Suscribirse", 16);
+        // Crece hacia la derecha desde su borde izquierdo, como las acciones del OSD: la «S» no se corta.
+        subscribe.setTag(R.id.anchor_left, Boolean.TRUE);
         subscribe.setOnClickListener(v -> toggleSubscription());
         subscribeBox.addView(subscribe, new LinearLayout.LayoutParams(-2, -2));
         subscribedDot = new View(this);

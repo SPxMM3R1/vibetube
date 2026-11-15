@@ -17,10 +17,11 @@
 - **Probado por el revisor en el emulador**: los directos Meganoticias y CHV Noticias reproducen y
   avanzan (commit 71654d0; CHV en 1080p VP9). Con 36028e8: ◀ ▶ entre acciones (log «moveAction de 0
   a 1», salta «Subtítulos») y la franja de Calidad con CHV (1080p, 5.4 Mbps, 30 fps).
-- **Pendiente de prueba del revisor** (sexta corrección, sobre 36028e8): etiquetas de Calidad que no
-  se pisan y rótulos de audio. Lo compiló y probó solo la JVM; no se usó el emulador en esta ronda.
-  Sin probar todavía: el clic fantasma, el reintento de directo y su cierre a los 3 s, y el resto de
-  la entrega 3.
+- **Pendiente de prueba del revisor** (séptima corrección, sobre 7a8ffc6): el orden de fuentes de
+  los directos (DASH antes que HLS, tope de 20 s), «Suscribirse» sin recorte en Canal y los demás
+  recortes de Inicio y Buscar. Sin emulador en esta ronda: lo compiló y probó solo la JVM. Antes,
+  con la sexta corrección, quedaban por probar las etiquetas de Calidad y los rótulos de audio, el
+  clic fantasma, el reintento de directo y su cierre a los 3 s, y el resto de la entrega 3.
 - **Idioma y región**: `es` / `CL`, fijados en `TubeApp.onCreate` antes de cualquier pedido.
 - **Repositorio**: solo local. El repositorio público `SPxMM3R1/vibetube`, las etiquetas y los
   releases los crea y publica el revisor. CI en `.github/workflows/android-ci.yml`.
@@ -38,17 +39,27 @@
   Música, Noticias, Deportes y Videojuegos (el rótulo toma el nombre de la que se use). «Tendencias»
   ya no aparece: YouTube la retiró en 2025 (`getTrendingObserve` vuelve vacía). La segunda fila es
   «En vivo ahora». Las filas quedan en top 340 y 535.
-- **Directos**: en este orden. (1) HLS si `getHlsManifestUrl()` viene. (2) DASH dinámico por URI
-  (`vibetube://mpd/<id>`) con `LiveSource`: cada pedido del manifiesto vuelve a llamar a
-  `createMpdStreamObservable()`, y los segmentos van por HTTP. El MPD se ajusta con
-  `Manifests.toLive(mpd, ahora, startTimeMs)`: `availabilityStartTime` queda anclado a la hora del
-  primer segmento del núcleo (`getStartTimeMs()`) más `LIVE_EDGE_MARGIN_SEGMENTS` (3) segmentos;
-  sin esa hora (respaldo), se calcula desde «ahora» con tope de 24 h. Se quita el
-  `SegmentTimeline`; `suggestedPresentationDelay` es `PT20S`. Cada directo registra una línea
-  `Directo: start=… startTimeMs=… segUs=… ast=…` y cada HTTP fallido registra el parámetro `sq`. (3) Si el directo falla, un solo reintento con
-  `player.prepare()` (vuelve a pedir el manifiesto); si vuelve a fallar, el OSD dice «Este directo
-  no se pudo abrir» y vuelve atrás a los 3 s. Los videos normales siguen con DASH estático
-  (`Manifests.toStatic`).
+- **Directos**: orden de fuentes decidido por el revisor el 2026-11-15, porque el HLS de este
+  cliente se queda colgado en algunos directos (Meganoticias «Siempre Juntos», `iezDsZhw9Mw`, se
+  quedaba en «CARGANDO» más de 60 s). Ahora: (1) DASH dinámico con `LiveSource` (por URI
+  `vibetube://mpd/<id>`), si `containsDashUrl()` o hay formatos DASH; (2) HLS si
+  `getHlsManifestUrl()` viene; (3) el OSD dice «Este directo no se pudo abrir» y vuelve atrás a los
+  3 s. El orden lo decide `LiveOrder` (clase pura con prueba `LiveOrderTest`).
+  - **Tope de arranque**: 20 s desde cada `prepare()` sin primer cuadro (`onRenderedFirstFrame`) ni
+    error; si hay otra fuente en el orden, pasa a ella (log `Directo: sin cuadro en 20 s, pruebo
+    HLS`); si no, el paso (3). Al salir de la pantalla el tope se suspende y, al volver, se rearma
+    si aún no hubo cuadro. Cambiar de fuente no reproduce por sí solo: conserva la pausa.
+  - **Reintento**: ante error, un reintento con `player.prepare()` (como antes). Si también falla,
+    se pasa a la fuente siguiente del orden (decisión propia: «mantén el reintento» se leyó como
+    un reintento por fuente); si no hay otra, el paso (3).
+  - **Log**: cada fuente que arranca escribe `Directo por DASH` o `Directo por HLS` (tag VibeTube).
+    El DASH registra `Directo: start=… startTimeMs=… segUs=… ast=…` y cada HTTP fallido el `sq`.
+    El DASH dinámico se ajusta con `Manifests.toLive(mpd, ahora, startTimeMs)`:
+    `availabilityStartTime` queda anclado a la hora del primer segmento del núcleo
+    (`getStartTimeMs()`) más `LIVE_EDGE_MARGIN_SEGMENTS` (3) segmentos; sin esa hora (respaldo), se
+    calcula desde «ahora» con tope de 24 h. Se quita el `SegmentTimeline`;
+    `suggestedPresentationDelay` es `PT20S`. Los videos normales siguen con DASH estático
+    (`Manifests.toStatic`).
 - **Cuenta** (`AccountActivity`, pestaña «Cuenta» al final): código de dispositivo con la URL y el
   código reales del servicio; espera la confirmación en segundo plano; al confirmar vuelve.
   Con sesión: nombre con punto verde, cuentas guardadas (se elige una), «Agregar otra cuenta» y
@@ -90,6 +101,16 @@
   foco a su primer descendiente enfocable. Se atienden en `dispatchKeyEvent` (`handleArrowKey`), antes que las vistas: en el emulador
   no llegaban al `onKeyDown`. Fuera de la fila, ◀ ▶ siguen adelantando y atrasando 10 s.
   Las acciones crecen desde su borde izquierdo (`anchor_left` en `Ui.restyle`), como en el mockup.
+- **Sin recorte al tomar el foco**: un `Ui.option` que crece 1,07× se corta si es el primer hijo de
+  un contenedor que lo envuelve. Por eso los padres de las filas tienen `setClipChildren(false)` y
+  `setClipToPadding(false)` (Canal: cabecera, fila de acciones y «Suscribirse»; Buscar: columna,
+  teclas, fila de Espacio/Borrar/Dictar y sugerencias) y las opciones alineadas a la izquierda
+  llevan el tag `anchor_left` (Canal, Buscar, aviso «Iniciar sesión» de Inicio). Las pestañas del
+  Inicio no se recortan: tienen el eyebrow o otra pestaña a la izquierda, y el margen de 34 las
+  absorbe.
+- **Abajo y ATRÁS en Reproductor**: Abajo con el foco fuera de las acciones entra a «Me gusta»
+  (`focusActions`). ATRÁS desde la franja de Calidad (`hidePanel`) deja el foco en «Calidad». Ambas
+  cosas ya estaban así; no cambiaron.
 - **Calidad**: el ancho de cada pantalla es proporcional a su alto frente a la mayor (mínimo 56).
 - **Al confirmar la cuenta** la pantalla se cierra y Inicio se vuelve a armar. Si se entró desde el
   reproductor, vuelve al reproductor.
@@ -115,6 +136,14 @@
    el revisor.
 
 ## Bitácora (más reciente arriba)
+
+- 2026-11-15 — 0.4.0, séptima corrección (sin emulador: lo prueba el revisor). A: directos en orden
+  DASH dinámico y después HLS (`LiveOrder`, con `LiveOrderTest`), tope de 20 s sin primer cuadro
+  que pasa a la fuente siguiente, y «Este directo no se pudo abrir» si no queda otra. Ante error se
+  reintenta una vez y luego se pasa a la fuente siguiente. El tope se suspende fuera de pantalla.
+  Cada fuente registra «Directo por DASH|HLS». B: «Suscribirse» en Canal, filas de Buscar y aviso
+  «Iniciar sesión» sin recorte (clip en los padres y `anchor_left`). C: Abajo y ATRÁS en
+  Reproductor ya cumplían la especificación; no cambiaron.
 
 - 2026-11-15 — 0.4.0, sexta corrección (sin emulador: lo prueba el revisor). A: en la franja de
   Calidad, una etiqueta de pantalla que pisaría la de la mayor se oculta (`Qualities.labelFits`);

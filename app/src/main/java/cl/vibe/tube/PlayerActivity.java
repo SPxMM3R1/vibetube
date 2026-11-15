@@ -96,6 +96,8 @@ public class PlayerActivity extends Activity {
     /** Un directo que no abre vuelve atrás después de mostrar el mensaje. */
     private static final long LIVE_FAIL_BACK_MS = 3_000;
     private static final String LIVE_FAIL = "Este directo no se pudo abrir";
+    /** Un directo sin primer cuadro en este tiempo (desde prepare) pasa a la fuente siguiente. */
+    private static final long LIVE_START_MS = 20_000;
     /** Largo máximo de la URI de un segmento que falla, en el log. */
     private static final int LOG_URI_MAX = 200;
     /** Velocidades que ciclan con OK. */
@@ -135,8 +137,15 @@ public class PlayerActivity extends Activity {
     private String wlId;
     private Disposable loading;
     private volatile boolean live;
-    /** Un directo que falla se vuelve a abrir una sola vez; se rearma cuando empieza a sonar. */
+    /** Fuentes del directo, en orden (DASH y después HLS); vacía si el video no es un directo. */
+    private LiveOrder liveOrder = new LiveOrder(false, false);
+    /** Formatos del directo, para armar la fuente que toque (DASH o HLS). */
+    private MediaItemFormatInfo liveInfo;
+    /** Un directo que falla se vuelve a abrir una sola vez por fuente; se rearma al cambiar de fuente. */
     private boolean liveRetried;
+    private final Runnable liveStartTimeout = this::onLiveStartTimeout;
+    /** Ya hubo primer cuadro con la fuente actual; mientras no lo haya, el tope de arranque corre. */
+    private boolean firstFrame;
     /** Con el OSD en acciones (su foco), ◀ ▶ mueven el foco y no adelantan el video. */
     private boolean actionsArmed;
     /** Descarta el ACTION_UP de OK que abrió esta pantalla (clic fantasma). */
@@ -264,11 +273,14 @@ public class PlayerActivity extends Activity {
             if (now) loadWatchLater();
             refreshActions();
         }
+        if (!firstFrame && liveOrdered()) armLiveStart();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
+        // Fuera de pantalla no se cambia de fuente; al volver el tope se rearma si aún no hubo cuadro.
+        handler.removeCallbacks(liveStartTimeout);
         if (player != null) {
             saveHistory();
             player.pause();
@@ -440,11 +452,18 @@ public class PlayerActivity extends Activity {
             public void onPlayerError(PlaybackException error) {
                 Log.e(TAG, "Error del reproductor", error);
                 logHttpFailure(error);
+                handler.removeCallbacks(liveStartTimeout);
                 if (live && !liveRetried) {
-                    // Un solo reintento: prepare() vuelve a pedir el manifiesto del directo.
+                    // Un solo reintento por fuente: prepare() vuelve a pedir el manifiesto del directo.
                     liveRetried = true;
                     statusView.setText("Cargando");
                     player.prepare();
+                    armLiveStart();
+                    return;
+                }
+                if (live && liveOrder.advance()) {
+                    Log.w(TAG, "Directo: falló, pruebo " + liveOrder.current().label);
+                    switchLive();
                     return;
                 }
                 fail(live ? LIVE_FAIL : "No se pudo reproducir: " + error.getErrorCodeName());
@@ -452,6 +471,8 @@ public class PlayerActivity extends Activity {
 
             @Override
             public void onRenderedFirstFrame() {
+                firstFrame = true;
+                handler.removeCallbacks(liveStartTimeout);
                 statusView.setText("");
                 hideSoon();
             }
@@ -614,8 +635,9 @@ public class PlayerActivity extends Activity {
     }
 
     /**
-     * Elige la fuente: HLS en un directo; DASH dinámico por URI en un directo sin HLS; DASH
-     * estático en un video normal; HLS o un archivo progresivo como último recurso.
+     * Elige la fuente. En un directo, el orden es DASH dinámico por URI y después HLS
+     * ({@link LiveOrder}); en un video normal, DASH estático. HLS o un archivo progresivo son el
+     * último recurso.
      */
     private MediaSource source(MediaItemFormatInfo info) throws Exception {
         if (info.isUnplayable()) throw new IllegalStateException("No disponible: " + safe(info.getPlayabilityReason()));
@@ -630,23 +652,14 @@ public class PlayerActivity extends Activity {
             if (TextUtils.isEmpty(uploadDate)) uploadDate = safe(info.getUploadDate());
             updateEyebrow();
         });
-        DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
-                .setUserAgent(USER_AGENT)
-                .setAllowCrossProtocolRedirects(true)
-                .setConnectTimeoutMs(15_000)
-                .setReadTimeoutMs(20_000);
-        if (info.isLive() && info.containsHlsUrl()) {
-            return hls(http, info.getHlsManifestUrl());
+        if (info.isLive()) {
+            // Directo: DASH dinámico si hay, luego HLS. Si ninguna sirve, cae a los respaldos de abajo.
+            liveInfo = info;
+            liveOrder = new LiveOrder(info.containsDashUrl() || info.containsDashFormats(), info.containsHlsUrl());
+            if (!liveOrder.isEmpty()) return liveSource();
         }
+        DefaultHttpDataSource.Factory http = http();
         if (info.containsDashFormats()) {
-            if (info.isLive()) {
-                // Directo: el MPD «dynamic» se pide por URI; Media3 lo vuelve a pedir en cada refresco.
-                DataSource.Factory factory = LiveSource.factory(http,
-                        () -> info.createMpdStreamObservable().blockingFirst(),
-                        info.getStartTimeMs(), info.getStartSegmentNum(), info.getSegmentDurationUs());
-                return new DashMediaSource.Factory(factory)
-                        .createMediaSource(androidx.media3.common.MediaItem.fromUri(LiveSource.uri(videoId)));
-            }
             // Video normal: el manifiesto estático se arma aquí (el núcleo lo entrega como «dynamic»).
             String mpd = Manifests.toStatic(readText(info.createMpdStream()));
             Log.i(TAG, "MPD de " + info.getTitle() + ": static");
@@ -669,15 +682,76 @@ public class PlayerActivity extends Activity {
                 : "El núcleo no devolvió formatos reproducibles");
     }
 
+    private static DefaultHttpDataSource.Factory http() {
+        return new DefaultHttpDataSource.Factory()
+                .setUserAgent(USER_AGENT)
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(20_000);
+    }
+
     private static MediaSource hls(DefaultHttpDataSource.Factory http, String url) {
         return new HlsMediaSource.Factory(http).createMediaSource(androidx.media3.common.MediaItem.fromUri(url));
     }
 
+    /** Fuente del directo que toca ahora (la de liveOrder.current()). */
+    private MediaSource liveSource() {
+        MediaItemFormatInfo info = liveInfo;
+        if (liveOrder.current() == LiveOrder.Kind.HLS) {
+            return hls(http(), info.getHlsManifestUrl());
+        }
+        // DASH dinámico: el MPD se pide por URI; Media3 lo vuelve a pedir en cada refresco.
+        DataSource.Factory factory = LiveSource.factory(http(),
+                () -> info.createMpdStreamObservable().blockingFirst(),
+                info.getStartTimeMs(), info.getStartSegmentNum(), info.getSegmentDurationUs());
+        return new DashMediaSource.Factory(factory)
+                .createMediaSource(androidx.media3.common.MediaItem.fromUri(LiveSource.uri(videoId)));
+    }
+
     private void start(MediaSource source) {
-        player.setMediaSource(source);
-        player.prepare();
+        if (liveOrdered()) Log.i(TAG, "Directo por " + liveOrder.current().label);
+        load(source);
         player.play();
         handler.post(tick);
+    }
+
+    /**
+     * Prepara una fuente sin reproducirla: quien llama decide el play. Así un cambio de fuente
+     * conserva si el video estaba en pausa, y no suena si la pantalla está detenida.
+     */
+    private void load(MediaSource source) {
+        firstFrame = false;
+        player.setMediaSource(source);
+        player.prepare();
+        armLiveStart();
+    }
+
+    /** Pasa a la fuente siguiente del directo: el reproductor se detiene y carga la otra. */
+    private void switchLive() {
+        liveRetried = false;
+        player.stop();
+        statusView.setText("Cargando");
+        Log.i(TAG, "Directo por " + liveOrder.current().label);
+        load(liveSource());
+    }
+
+    private boolean liveOrdered() {
+        return live && !liveOrder.isEmpty();
+    }
+
+    /** Desde cada prepare(): si en 20 s no hay primer cuadro ni error, se prueba la fuente siguiente. */
+    private void armLiveStart() {
+        handler.removeCallbacks(liveStartTimeout);
+        if (liveOrdered()) handler.postDelayed(liveStartTimeout, LIVE_START_MS);
+    }
+
+    private void onLiveStartTimeout() {
+        if (liveOrder.advance()) {
+            Log.w(TAG, "Directo: sin cuadro en 20 s, pruebo " + liveOrder.current().label);
+            switchLive();
+        } else {
+            fail(LIVE_FAIL);
+        }
     }
 
     /** Un fallo muestra el mensaje en el OSD; un directo que no abre vuelve atrás. */

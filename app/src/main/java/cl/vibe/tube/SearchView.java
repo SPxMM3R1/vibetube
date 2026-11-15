@@ -91,6 +91,9 @@ final class SearchView extends FrameLayout {
     private void buildLeft() {
         LinearLayout left = new LinearLayout(context);
         left.setOrientation(LinearLayout.VERTICAL);
+        // Las opciones crecen al tener el foco (1,07×): la columna y sus filas no las recortan.
+        left.setClipChildren(false);
+        left.setClipToPadding(false);
         FrameLayout.LayoutParams leftParams = new FrameLayout.LayoutParams(Ui.px(420), -2, Gravity.TOP | Gravity.START);
         leftParams.leftMargin = Ui.px(64);
         leftParams.topMargin = Ui.px(120);
@@ -115,6 +118,8 @@ final class SearchView extends FrameLayout {
 
         for (int start = 0; start < KEYS.length(); start += KEYS_PER_ROW) {
             LinearLayout keyRow = new LinearLayout(context);
+            keyRow.setClipChildren(false);
+            keyRow.setClipToPadding(false);
             int end = Math.min(KEYS.length(), start + KEYS_PER_ROW);
             for (int i = start; i < end; i++) {
                 TextView key = Ui.option(context, Focus.LINE, String.valueOf(KEYS.charAt(i)), 19);
@@ -132,6 +137,8 @@ final class SearchView extends FrameLayout {
         }
 
         LinearLayout actionRow = new LinearLayout(context);
+        actionRow.setClipChildren(false);
+        actionRow.setClipToPadding(false);
         actionRow.addView(action("Espacio", v -> typed(" ")), actionParams(26));
         actionRow.addView(action("Borrar", v -> erase()), actionParams(26));
         actionRow.addView(action("Dictar", v -> dictate()), actionParams(0));
@@ -144,6 +151,8 @@ final class SearchView extends FrameLayout {
         left.addView(Ui.label(context, "Sugerencias"), suggestionsLabelParams);
         suggestions = new LinearLayout(context);
         suggestions.setOrientation(LinearLayout.VERTICAL);
+        suggestions.setClipChildren(false);
+        suggestions.setClipToPadding(false);
         LinearLayout.LayoutParams suggestionsParams = new LinearLayout.LayoutParams(-1, -2);
         suggestionsParams.topMargin = Ui.px(12);
         left.addView(suggestions, suggestionsParams);
@@ -151,6 +160,7 @@ final class SearchView extends FrameLayout {
 
     private TextView action(String label, View.OnClickListener onClick) {
         TextView view = Ui.option(context, Focus.LINE, label, 15);
+        view.setTag(R.id.anchor_left, Boolean.TRUE);
         view.setOnClickListener(onClick);
         return view;
     }
@@ -328,6 +338,7 @@ final class SearchView extends FrameLayout {
             int prefix = Math.min(text.length(), tag.length());
             label.setSpan(new StyleSpan(Typeface.BOLD), 0, prefix, 0);
             TextView option = Ui.option(context, Focus.LINE, label, 15);
+            option.setTag(R.id.anchor_left, Boolean.TRUE);
             option.setOnClickListener(v -> {
                 handler.removeCallbacks(debounced);
                 query.setLength(0);
