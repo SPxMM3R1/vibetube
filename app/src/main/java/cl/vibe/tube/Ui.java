@@ -6,6 +6,7 @@ import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.animation.PathInterpolator;
 import android.widget.TextView;
 
@@ -125,6 +126,21 @@ final class Ui {
             child.animate().alpha(1f).translationY(0f).setStartDelay(i * 55L)
                     .setDuration(620).setInterpolator(SPRING).start();
         }
+    }
+
+    /**
+     * true si `view` es `group` o está dentro de él. Sube por los padres con getParent() y se
+     * detiene en la raíz; si `view` es null, dice que no.
+     */
+    static boolean inside(View group, View view) {
+        if (group == null || view == null) return false;
+        View at = view;
+        while (at != null) {
+            if (at == group) return true;
+            ViewParent parent = at.getParent();
+            at = parent instanceof View ? (View) parent : null;
+        }
+        return false;
     }
 
     /** 18:42, o 1:02:00 para más de una hora; vacío si no hay duración. */

@@ -17,6 +17,7 @@ import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.animation.PathInterpolator;
 import android.widget.FrameLayout;
@@ -71,11 +72,15 @@ public class MainActivity extends Activity implements Tiles.Actions {
      */
     private static final int ROWS_HEIGHT = 420;
     private static final int DESCRIPTION_DELAY_MS = 350;
+    /** Cuánto se queda el foco sobre una pestaña antes de mostrar su sección (sin quitarle el foco). */
+    private static final int DWELL_MS = 600;
 
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, String> descriptions = new HashMap<>();
     private final TextView[] tabs = new TextView[TAB_NAMES.length];
+    /** La última tarjeta (o tecla) con foco de cada sección: ▼ desde la barra vuelve a ella. */
+    private final View[] lastFocus = new View[TAB_NAMES.length];
     private final RowsView[] sections = new RowsView[4];
     private final LinearLayout[] prompts = new LinearLayout[4];
     private final TextView[] promptActions = new TextView[4];
@@ -131,8 +136,10 @@ public class MainActivity extends Activity implements Tiles.Actions {
         setContentView(root);
         focus = new Focus(root);
         root.getViewTreeObserver().addOnGlobalFocusChangeListener(focus);
+        root.getViewTreeObserver().addOnGlobalFocusChangeListener(this::onFocusMoved);
         clockTick.run();
-        select(TAB_HOME);
+        showTab(TAB_HOME);
+        focusFirst(TAB_HOME);
         // Al abrir la app: revisa la versión nueva como máximo cada 6 horas.
         updater.checkIfDue();
     }
@@ -206,9 +213,10 @@ public class MainActivity extends Activity implements Tiles.Actions {
             final int which = i;
             TextView view = Ui.option(this, Focus.LINE, TAB_NAMES[i], 16);
             // «Cuenta» no es una pantalla de filas: abre la pantalla de Cuenta.
+            // OK cambia la sección y deja el foco en la barra; ▼ es lo que baja al contenido.
             view.setOnClickListener(v -> {
                 if (which == TAB_ACCOUNT) openAccount();
-                else select(which);
+                else showTab(which);
             });
             view.setId(View.generateViewId());
             tabs[i] = view;
@@ -326,11 +334,12 @@ public class MainActivity extends Activity implements Tiles.Actions {
         return sections[which];
     }
 
-    private void select(int which) {
-        if (which == tab) {
-            focusFirst(which);
-            return;
-        }
+    /**
+     * Muestra la sección de una pestaña SIN mover el foco: este se queda en la barra. Lo piden OK
+     * sobre la pestaña y la espera de 600 ms sobre ella (ver onFocusMoved). Solo ▼ baja al contenido.
+     */
+    private void showTab(int which) {
+        if (which == tab) return;
         tab = which;
         for (int i = 0; i < tabs.length; i++) Ui.markSelected(tabs[i], i == which);
         View target = viewOf(which);
@@ -359,15 +368,103 @@ public class MainActivity extends Activity implements Tiles.Actions {
         }
         if (rowsTab) ((RowsView) target).enter();
         refreshUpdate();
-        focusFirst(which);
     }
 
+    /** Pone el foco en el contenido de una pestaña cuando la pantalla ya se armó. */
     private void focusFirst(int which) {
-        root.post(() -> {
-            if (which == TAB_SEARCH) search.focusStart();
-            else if (!signed && (which == TAB_SUBS || which == TAB_LIBRARY)) promptActions[which].requestFocus();
-            else sections[which].focusFirst();
-        });
+        root.post(() -> focusContent(which));
+    }
+
+    /**
+     * Lleva el foco al contenido de una pestaña: a la última tarjeta (o tecla) que lo tuvo, o a la
+     * primera si no hay ninguna.
+     */
+    private void focusContent(int which) {
+        View last = lastFocus[which];
+        if (last != null && last.isFocusable() && Ui.inside(viewOf(which), last)) {
+            last.requestFocus();
+            return;
+        }
+        if (which == TAB_SEARCH) search.focusStart();
+        else if (!signed && (which == TAB_SUBS || which == TAB_LIBRARY)) promptActions[which].requestFocus();
+        else sections[which].focusFirst();
+    }
+
+    /** Índice de la pestaña que tiene el foco, o -1 si no es una pestaña. */
+    private int tabAt(View view) {
+        for (int i = 0; i < tabs.length; i++) {
+            if (tabs[i] == view) return i;
+        }
+        return -1;
+    }
+
+    /** true si la vista está en la fila de arriba de la pantalla que se ve. */
+    private boolean atTop(int which, View focused) {
+        if (which == TAB_SEARCH) return search.inTopRow(focused);
+        if (!signed && (which == TAB_SUBS || which == TAB_LIBRARY)) return focused == promptActions[which];
+        return sections[which].inTopRow(focused);
+    }
+
+    /**
+     * Cada cambio de foco. Sobre una pestaña, arma la espera de 600 ms: si el foco no se mueve, la
+     * sección cambia sin quitarle el foco a la barra. Sobre el contenido, recuerda la última tarjeta
+     * con foco de la sección visible, para que ▼ desde la barra vuelva a ella.
+     */
+    private void onFocusMoved(View from, View to) {
+        handler.removeCallbacks(dwell);
+        int at = tabAt(to);
+        if (at >= 0) {
+            // «Cuenta» no es una sección: solo OK la abre.
+            if (at != tab && at != TAB_ACCOUNT) handler.postDelayed(dwell, DWELL_MS);
+        } else if (to != null && tab >= 0 && to != updateBanner && Ui.inside(viewOf(tab), to)) {
+            lastFocus[tab] = to;
+        }
+    }
+
+    /** Pasados 600 ms sobre la misma pestaña, muestra su sección (el foco sigue en la barra). */
+    private final Runnable dwell = () -> {
+        int at = tabAt(getCurrentFocus());
+        if (at >= 0 && at != tab && at != TAB_ACCOUNT) showTab(at);
+    };
+
+    /** Las flechas de la barra de pestañas y el ▲ desde la primera fila se atienden aquí, antes que las vistas. */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN && navigate(event.getKeyCode())) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
+    /** true si la tecla la resolvió la navegación entre pestañas y contenido. */
+    private boolean navigate(int keyCode) {
+        View focused = getCurrentFocus();
+        int at = tabAt(focused);
+        if (at >= 0) {
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                    if (at > 0) tabs[at - 1].requestFocus();
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (at < tabs.length - 1) tabs[at + 1].requestFocus();
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    // Encima de la barra no hay nada: ▲ se queda aquí.
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    // El aviso de versión va justo debajo de la barra; después, el contenido.
+                    if (updateBanner.getVisibility() == View.VISIBLE) updateBanner.requestFocus();
+                    else focusContent(tab);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        // ▲ desde la primera fila (o desde el aviso) lleva siempre a la pestaña de la sección visible.
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP && tab >= 0
+                && (focused == updateBanner || atTop(tab, focused))) {
+            tabs[tab].requestFocus();
+            return true;
+        }
+        return false;
     }
 
     private void load(int which) {
@@ -534,7 +631,8 @@ public class MainActivity extends Activity implements Tiles.Actions {
     @Override
     public void onBackPressed() {
         if (tab != TAB_HOME && tab != -1) {
-            select(TAB_HOME);
+            showTab(TAB_HOME);
+            focusFirst(TAB_HOME);
             return;
         }
         super.onBackPressed();

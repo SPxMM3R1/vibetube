@@ -1,6 +1,7 @@
 package cl.vibe.tube;
 
 import android.content.Context;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
@@ -25,6 +26,11 @@ final class Tiles {
     static final int THUMB_HEIGHT = 117;
     /** Alto de la tarjeta entera: miniatura, 10 de aire y dos líneas de 17. */
     static final int HEIGHT = 161;
+    /**
+     * Lo que sobresale de la tarjeta al tener el foco: la miniatura crece 3 % a cada lado (6,24 de
+     * 208) y el marco va 6 más. Se redondea hacia arriba para no quedar corto.
+     */
+    static final int REVEAL = 14;
 
     /** Lo que pasa cuando el control marca, elige o mantiene una tarjeta. */
     interface Actions {
@@ -57,6 +63,19 @@ final class Tiles {
 
     static List<MediaGroup> single(MediaGroup group) {
         return Collections.singletonList(group);
+    }
+
+    /**
+     * Pide a la fila que desplace la tarjeta con foco con lo que crece al marcarla (la miniatura al
+     * 106 % más el marco de 6): así la fila no deja el borde de la miniatura fuera de la pantalla.
+     * Se pide después del desplazamiento que hace Android solo, que mide la tarjeta sin crecer.
+     */
+    private static void revealGrown(View tile) {
+        tile.post(() -> {
+            if (!tile.hasFocus()) return;
+            int grow = Ui.px(REVEAL);
+            tile.requestRectangleOnScreen(new Rect(-grow, 0, tile.getWidth() + grow, tile.getHeight()), false);
+        });
     }
 
     static LinearLayout tile(Context context, MediaItem item, Actions actions, int gapEnd) {
@@ -126,6 +145,7 @@ final class Tiles {
                     .setInterpolator(Ui.SPRING).setDuration(350).start();
             caption.setTextColor(focused ? Ui.WHITE : Ui.MUTED);
             caption.setTypeface(Typeface.create("sans-serif-medium", focused ? Typeface.BOLD : Typeface.NORMAL));
+            if (focused) revealGrown(view);
             if (focused && actions != null) actions.focused(item);
         });
         tile.setOnClickListener(view -> {

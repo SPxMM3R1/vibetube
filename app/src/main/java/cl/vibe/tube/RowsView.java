@@ -83,8 +83,15 @@ final class RowsView extends FrameLayout {
         scroll.addView(column, new ScrollView.LayoutParams(-1, -2));
         LayoutParams params = new LayoutParams(-1, Ui.px(heightDesign));
         params.leftMargin = Ui.px(64);
+        // Las filas terminan a 64 de la derecha: la tarjeta con foco, al crecer, cabe en el margen.
+        params.rightMargin = Ui.px(64);
         params.topMargin = Ui.px(topDesign);
         addView(scroll, params);
+    }
+
+    /** true si la vista está en la primera fila de tarjetas (la de arriba de la pantalla). */
+    boolean inTopRow(View view) {
+        return !rows.isEmpty() && Ui.inside(rows.get(0).strip, view);
     }
 
     /** Agrega una fila vacía (con «Cargando…») al final. */

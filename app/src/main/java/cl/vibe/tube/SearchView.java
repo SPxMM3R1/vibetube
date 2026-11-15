@@ -43,7 +43,8 @@ import io.reactivex.schedulers.Schedulers;
 final class SearchView extends FrameLayout {
     static final int DEBOUNCE_MS = 600;
     static final int REQUEST_VOICE = 7;
-    private static final String KEYS = "abcdefghijklmnñopqrstuvwxyz123";
+    /** Letras (con la ñ tras la n, como en el alfabeto español) y luego los números 0 a 9. */
+    private static final String KEYS = "abcdefghijklmnñopqrstuvwxyz0123456789";
     private static final int KEYS_PER_ROW = 7;
     private static final int RESULT_COLUMNS = 3;
 
@@ -56,6 +57,8 @@ final class SearchView extends FrameLayout {
     private TextView queryText;
     private View caret;
     private TextView firstKey;
+    /** La fila de letras de arriba: la que ▲ lleva a la pestaña Buscar. */
+    private LinearLayout firstKeyRow;
     private LinearLayout suggestions;
     private TextView resultsLabel;
     private LinearLayout results;
@@ -76,6 +79,12 @@ final class SearchView extends FrameLayout {
     /** Foco al entrar: la primera letra. */
     void focusStart() {
         if (firstKey != null) firstKey.requestFocus();
+    }
+
+    /** true si la vista está en la fila de arriba: la de letras o la primera de resultados. */
+    boolean inTopRow(View view) {
+        if (Ui.inside(firstKeyRow, view)) return true;
+        return results != null && results.getChildCount() > 0 && Ui.inside(results.getChildAt(0), view);
     }
 
     /** Lo que dictó el usuario: va al cuadro y se busca enseguida. */
@@ -120,6 +129,7 @@ final class SearchView extends FrameLayout {
             LinearLayout keyRow = new LinearLayout(context);
             keyRow.setClipChildren(false);
             keyRow.setClipToPadding(false);
+            if (start == 0) firstKeyRow = keyRow;
             int end = Math.min(KEYS.length(), start + KEYS_PER_ROW);
             for (int i = start; i < end; i++) {
                 TextView key = Ui.option(context, Focus.LINE, String.valueOf(KEYS.charAt(i)), 19);

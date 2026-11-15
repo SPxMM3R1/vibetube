@@ -9,7 +9,9 @@
   referencia: `../mockups/cliente-videos/cliente-videos.html` (versión 1, elegida por el usuario).
 - **Nombre**: VibeTube (antes VibeVideos). Carpeta `VibeTube`. Paquete, `namespace` y
   `applicationId`: `cl.vibe.tube`. Clase de aplicación: `TubeApp`.
-- **Versión**: 0.4.1 (versionCode 5). Entrega 4 de `04-vibetube.md`, en dos partes: publicación
+- **Versión**: 0.4.2 (versionCode 6): arreglos de navegación con el control (pestañas, ▲ desde la
+  primera fila, teclado de Buscar y tarjeta con foco dentro del margen). Sin emulador: lo prueba el
+  revisor. Antes, 0.4.1 (versionCode 5). Entrega 4 de `04-vibetube.md`, en dos partes: publicación
   firmada y actualizador (esta versión, 0.4.1) y HD con SABR (0.5.0, pendiente). Lo de 0.4.0
   (Cuenta, Reproduciendo, Calidad, directos y correcciones) sigue igual; ver abajo.
 - **Probado en el emulador por el revisor** (APK de la primera corrección): título en 2 líneas;
@@ -35,6 +37,36 @@
   (MPD dinámico a estático; directo con margen de segmentos), `LiveOrderTest`, `AudioLabelsTest` y
   `UpdateRulesTest` (versiones, nombre del APK, descarga y horario del actualizador). Corren con
   `./gradlew :app:testDebugUnitTest`.
+
+## Navegación con el control (0.4.2)
+
+- **Barra de pestañas**: ◀ ▶ solo mueven el foco entre pestañas; no cambian la sección. OK sobre
+  una pestaña muestra su sección y deja el foco en la barra. Si el foco se queda 600 ms sobre una
+  pestaña, su sección se muestra también sin quitarle el foco a la barra (`DWELL_MS`). Solo ▼ baja
+  al contenido. «Cuenta» no es sección: solo OK la abre.
+- **▼ desde la barra**: a la última tarjeta (o tecla) con foco de esa sección, o a la primera. Si el
+  aviso de versión está visible (solo en Inicio), ▼ va primero al aviso, que está justo debajo de la
+  barra; así sigue siendo alcanzable. Es una decisión fuera de la regla «▼ vuelve a la tarjeta».
+- **▲ desde la primera fila** de Inicio, Suscripciones, En vivo y Biblioteca, desde la fila de
+  letras o la primera fila de resultados de Buscar, desde el aviso de versión o desde «Iniciar
+  sesión» lleva siempre a la pestaña de la sección visible. Se decide en `MainActivity.navigate`
+  (`dispatchKeyEvent`), con `RowsView.inTopRow` y `SearchView.inTopRow`, y no por la geometría de
+  Android.
+- **Buscar**: el teclado tiene a–z, ñ y 0–9 completos, en filas de 7 (37 teclas), con los números al
+  final.
+- **Filas**: la fila termina a 64 dp del borde derecho (`rightMargin`). Al tomar el foco, la tarjeta
+  pide que se vea también lo que crece (`Tiles.revealGrown`, 14 dp: la miniatura al 106 % más el
+  marco de 6), así que no sale de la pantalla.
+- **Causas de la 0.4.1 (lo que el revisor vio)**:
+  - ▲ desde la primera fila: la búsqueda geométrica de Android no tenía regla para la fila superior;
+    en la columna 0 no encontraba la pestaña activa y desde la columna 2 caía en la que quedaba
+    encima (Buscar). Causa probable; no reproducida sin emulador.
+  - Sección que cambiaba al pasar el foco: en 0.4.1 el único cambio de sección era el clic (OK) de la
+    pestaña, y ese clic llevaba además el foco al contenido (`select` → `focusFirst`). No encontré otro
+    camino en el código; no reproducida sin emulador.
+  - Tarjeta cortada a la derecha: Android solo desplaza hasta que la tarjeta sin crecer cabe en el
+    borde (1280 dp = 1920 px); la miniatura al 106 % y el marco sobresalían 12 a 14 dp.
+  - Teclado de Buscar: solo tenía 1, 2 y 3 como números.
 
 ## Publicación y actualizador (0.4.1)
 
@@ -182,14 +214,25 @@
 
 ## Pendiente
 
-1. Entrega 4 (0.5.0): HD con SABR en Media3 (módulo `:sabr`).
-2. Prueba del revisor de 0.4.1 en el emulador: aviso en Inicio (OK, descarga, instalación), fila
+1. Prueba del revisor de 0.4.2 en el emulador: ▲ desde la primera fila de cada pantalla con
+   pestañas, ◀ ▶ en la barra sin cambiar la sección, la espera de 600 ms, ▼ hacia la última tarjeta,
+   el teclado de Buscar completo y la última tarjeta de Música dentro del margen.
+2. Entrega 4 (0.5.0): HD con SABR en Media3 (módulo `:sabr`).
+3. Prueba del revisor de 0.4.1 en el emulador: aviso en Inicio (OK, descarga, instalación), fila
    «Actualizaciones» con «Buscar ahora», y la publicación con la etiqueta `v0.4.1`. La primera
    actualización de 0.4.0 a 0.4.1 requiere desinstalar antes (ver Limitaciones).
-3. Prueba con cuenta real (inicio por código, varias cuentas, Me gusta, Guardar, posición): la hace
+4. Prueba con cuenta real (inicio por código, varias cuentas, Me gusta, Guardar, posición): la hace
    el revisor.
 
 ## Bitácora (más reciente arriba)
+
+- 2026-11-15 — 0.4.2: arreglos de navegación con el control (sin emulador: lo prueba el revisor).
+  Pestañas: ◀ ▶ solo mueven el foco; OK o 600 ms sobre una pestaña muestran la sección sin quitar el
+  foco; ▼ baja y vuelve a la última tarjeta con foco; ▲ desde la primera fila lleva a la pestaña
+  activa (`MainActivity.navigate`, `showTab`, `focusContent`, `onFocusMoved`; `RowsView.inTopRow`,
+  `SearchView.inTopRow`). Buscar: teclado a–z, ñ y 0–9. Filas: margen derecho de 64 y la tarjeta con
+  foco pide ver 14 dp más (`Tiles.revealGrown`). `versionCode` 6, `versionName` 0.4.2. Pruebas:
+  `:app:assembleDebug` y `:app:testDebugUnitTest` en verde.
 
 - 2026-11-15 — 0.4.1: publicación firmada y actualizador (entrega 4, parte 1; SABR queda para
   0.5.0). Firma: `app/build.gradle` usa `VIBETUBE_KEYSTORE_PATH` si está definida, para debug y
