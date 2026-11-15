@@ -9,9 +9,9 @@
   referencia: `../mockups/cliente-videos/cliente-videos.html` (versión 1, elegida por el usuario).
 - **Nombre**: VibeTube (antes VibeVideos). Carpeta `VibeTube`. Paquete, `namespace` y
   `applicationId`: `cl.vibe.tube`. Clase de aplicación: `TubeApp`.
-- **Versión**: 0.4.0 (versionCode 4). Entrega 3 de 4 de `04-vibetube.md`: Cuenta, Reproduciendo y
-  Calidad, más las dos correcciones de la entrega 2 (Tendencias y directos) y la segunda ronda de
-  correcciones de esta misma versión (directos, clic fantasma y ◀ ▶; ver abajo).
+- **Versión**: 0.4.1 (versionCode 5). Entrega 4 de `04-vibetube.md`, en dos partes: publicación
+  firmada y actualizador (esta versión, 0.4.1) y HD con SABR (0.5.0, pendiente). Lo de 0.4.0
+  (Cuenta, Reproduciendo, Calidad, directos y correcciones) sigue igual; ver abajo.
 - **Probado en el emulador por el revisor** (APK de la primera corrección): título en 2 líneas;
   «DESPUÉS · 39:14»; eyebrow y «Seguir sin cuenta» sin recorte; «Subtítulos» atenuado.
 - **Probado por el revisor en el emulador**: los directos Meganoticias y CHV Noticias reproducen y
@@ -24,15 +24,47 @@
   con la sexta corrección, quedaban por probar las etiquetas de Calidad y los rótulos de audio, el
   clic fantasma, el reintento de directo y su cierre a los 3 s, y el resto de la entrega 3.
 - **Idioma y región**: `es` / `CL`, fijados en `TubeApp.onCreate` antes de cualquier pedido.
-- **Repositorio**: solo local. El repositorio público `SPxMM3R1/vibetube`, las etiquetas y los
-  releases los crea y publica el revisor. CI en `.github/workflows/android-ci.yml`.
+- **Repositorio**: `SPxMM3R1/vibetube` en GitHub (rama `main`). Las etiquetas y los releases los
+  sube el revisor; la forma de publicar está en «Publicación y actualizador» más abajo. CI de cada
+  push en `.github/workflows/android-ci.yml`; publicación en `android-release.yml`.
 - **Escala**: las medidas están en unidades del mockup (1280 × 720). `Ui.init` calcula la escala
   de la pantalla real: en una TV 720p de densidad 1 es 1 dp; en el emulador VibeTV (1080p, 320 dpi)
   es 1,5 px por unidad. Así el diseño es igual en cualquier TV. El reproductor también usa
   `Ui.px` (antes usaba `dp`).
-- **Pruebas unitarias**: `QualitiesTest` (agrupación de calidades y etiquetas) y `ManifestsTest`
-  (MPD dinámico a estático; directo con margen de segmentos). Corren con
+- **Pruebas unitarias**: `QualitiesTest` (agrupación de calidades y etiquetas), `ManifestsTest`
+  (MPD dinámico a estático; directo con margen de segmentos), `LiveOrderTest`, `AudioLabelsTest` y
+  `UpdateRulesTest` (versiones, nombre del APK, descarga y horario del actualizador). Corren con
   `./gradlew :app:testDebugUnitTest`.
+
+## Publicación y actualizador (0.4.1)
+
+- **Cómo se publica** (`.github/workflows/android-release.yml`, «Publicar APK»): desde `main`, el
+  revisor sube la etiqueta `vX.Y.Z`. El workflow comprueba que `versionName` (en `app/build.gradle`)
+  sea `X.Y.Z`, restaura la llave desde el secreto `VIBETUBE_KEYSTORE_BASE64`, corre
+  `:app:testDebugUnitTest :app:assembleDebug`, verifica con `apksigner` que el certificado tenga el
+  SHA-256 `87b1fb67…eaac`, y publica `VibeTube-vX.Y.Z.apk` con `gh release create --verify-tag
+  --generate-notes`. GitHub lo deja como Latest.
+- **Llave de firma**: PKCS12, alias `androiddebugkey`, contraseñas `android` (en `build.gradle`).
+  Respaldo: `D:\Users\SP4MM3R\Documents\Codex\llaves-firma\vibetube.keystore`. **Nunca cambiarla**:
+  el actualizador solo instala un APK firmado con la misma llave que la app ya instalada. Sin la
+  variable `VIBETUBE_KEYSTORE_PATH` (en el computador de desarrollo) se compila con la firma debug.
+- **Actualizador** (`AppUpdater`, `UpdateRepository`, `UpdateRules`, `UpdateInfo`, `VibeFileProvider`):
+  - Al abrir la app (`MainActivity.onCreate`) revisa `releases/latest` como máximo cada 6 horas,
+    contadas desde el último intento (también si falló). El resultado se guarda en las preferencias
+    `vibetube_update`.
+  - **Inicio**: si hay una versión nueva, una línea bajo la barra, «● Hay una versión nueva · X ·
+    OK para instalar». OK descarga el APK (muestra el porcentaje), comprueba que sea del paquete
+    `cl.vibe.tube`, de `versionCode` mayor y con la misma firma, y abre el instalador de Android
+    (`REQUEST_INSTALL_PACKAGES`, FileProvider con `xml/file_paths`). Sin permiso de instalar lleva a
+    los ajustes y, al volver, sigue.
+  - **Cuenta**, fila «Actualizaciones» al pie: «VibeTube 0.4.1 · revisado hoy a las 16:02 · estás
+    al día» y «Buscar ahora» (revisa sin esperar las 6 horas).
+  - El APK es el primer archivo del release cuyo nombre empieza por `VibeTube-` y termina en `.apk`.
+    La descarga solo se acepta desde `https://github.com/SPxMM3R1/vibetube/releases/download/`.
+- **Pruebas JVM**: `UpdateRulesTest` (orden de versiones, nombre del APK, dirección de descarga y
+  horario de revisión).
+- **Sin probar en el emulador** (pedido del usuario): el aviso, «Buscar ahora», la descarga y la
+  instalación las prueba el revisor.
 
 ## Entrega 3 (0.4.0): lo que hay
 
@@ -121,10 +153,25 @@
 - **Al confirmar la cuenta** la pantalla se cierra y Inicio se vuelve a armar. Si se entró desde el
   reproductor, vuelve al reproductor.
 
+- **Aviso y fila, no diálogo** (pedido del usuario, 2026-11-15): la especificación pedía un diálogo
+  «Actualizar · Ahora no»; se hizo una línea en el Inicio («Hay una versión nueva · X · OK para
+  instalar») y la fila «Actualizaciones» en Cuenta. Sin «Ahora no»: el aviso queda hasta instalar o
+  hasta que la app esté al día.
+- **Revisión**: al abrir el Inicio, como máximo cada 6 horas desde el último intento (también
+  cuenta si falló). «Buscar ahora» no espera. Si la revisión encuentra una versión mayor, la fila
+  dice «hay una versión nueva: X».
+- **Asset por prefijo**: se reconoce el APK por `VibeTube-` … `.apk`, no por el nombre exacto.
+- **Dependencia nueva**: `androidx.core:core:1.12.0`, solo para el FileProvider del actualizador.
+- **Release con `assembleDebug`**: como VibeDLNA, el APK publicado es el debug firmado con la llave
+  de VibeTube (no minificado).
+
 ## Limitaciones conocidas
 
 - **Sin cuenta, Inicio solo tiene lo que el núcleo entrega sin sesión** (ver arriba).
-- **SABR**: los videos que solo llegan por SABR no reproducen (entrega 4).
+- **SABR**: los videos que solo llegan por SABR no reproducen (0.5.0).
+- **Primera actualización**: 0.4.1 es el primer APK firmado con la llave de VibeTube. Una
+  instalación de 0.4.0 firmada con la llave debug del computador no se puede actualizar en sitio:
+  hay que desinstalarla antes (se pierde la sesión de cuenta guardada).
 - **Subtítulos**: se ciclan las pistas que el reproductor reciba del video. El núcleo no entrega
   subtítulos en el MPD; por eso hoy suelen decir «no hay».
 - **Con cuenta** (Inicio con historial, Suscripciones, Biblioteca, Me gusta, Guardar, Suscribirse y
@@ -135,13 +182,26 @@
 
 ## Pendiente
 
-1. Entrega 4 (0.5.0): HD con SABR en Media3 (módulo `:sabr`) y `release.yml`.
-2. Actualizador (entrega 4).
-3. Repositorio `SPxMM3R1/vibetube` en GitHub, con tag y release: lo hace el revisor.
-4. Prueba con cuenta real (inicio por código, varias cuentas, Me gusta, Guardar, posición): la hace
+1. Entrega 4 (0.5.0): HD con SABR en Media3 (módulo `:sabr`).
+2. Prueba del revisor de 0.4.1 en el emulador: aviso en Inicio (OK, descarga, instalación), fila
+   «Actualizaciones» con «Buscar ahora», y la publicación con la etiqueta `v0.4.1`. La primera
+   actualización de 0.4.0 a 0.4.1 requiere desinstalar antes (ver Limitaciones).
+3. Prueba con cuenta real (inicio por código, varias cuentas, Me gusta, Guardar, posición): la hace
    el revisor.
 
 ## Bitácora (más reciente arriba)
+
+- 2026-11-15 — 0.4.1: publicación firmada y actualizador (entrega 4, parte 1; SABR queda para
+  0.5.0). Firma: `app/build.gradle` usa `VIBETUBE_KEYSTORE_PATH` si está definida, para debug y
+  release; sin ella compila como antes. Workflow `android-release.yml` (etiqueta `v*`, verificación
+  del certificado, `gh release create --verify-tag --generate-notes`). Actualizador: `UpdateRules`
+  (pura, con `UpdateRulesTest`), `UpdateRepository`, `AppUpdater` (singleton, revisión cada 6 h,
+  descarga con porcentaje, verificación de paquete/versión/firma, instalador con FileProvider),
+  `UpdateInfo`, `VibeFileProvider` y `xml/file_paths`. Inicio: línea de aviso (`refreshUpdate`).
+  Cuenta: fila «Actualizaciones» con «Buscar ahora». Manifiesto: `REQUEST_INSTALL_PACKAGES` y
+  provider. `versionCode` 5, `versionName` 0.4.1. Pruebas: `:app:testDebugUnitTest` en verde (6 nuevas
+  en `UpdateRulesTest`). Con `VIBETUBE_KEYSTORE_PATH` definida, el debug y el release salen firmados
+  con el SHA-256 `87b1fb67…eaac` (verificado con `apksigner`). Sin emulador, por pedido del usuario.
 
 - 2026-11-15 — 0.4.0, octava corrección (sin emulador: lo prueba el revisor). A: el orden de fuentes
   de los directos sigue a SmartTube (`VideoLoaderController`, como en la nota de Directos): DASH

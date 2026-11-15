@@ -23,5 +23,11 @@ Cómo trabajar en este repositorio. Léelo junto con `ESTADO.md`.
 - Git: commits locales en español, terminados en la línea de coautoría del modelo que los escribe.
   No hacer push, tags ni releases: los hace el revisor. Nunca `--amend` ni force push, y no borrar
   releases.
+- Publicar (lo hace el revisor): desde `main`, subir la etiqueta `vX.Y.Z` que coincida con
+  `versionName` de `app/build.gradle`. El workflow `android-release.yml` firma con el secreto
+  `VIBETUBE_KEYSTORE_BASE64`, comprueba el certificado y publica `VibeTube-vX.Y.Z.apk` como release
+  Latest; el actualizador de la app lo lee desde ahí. La llave es la de `llaves-firma\vibetube.keystore`
+  (respaldo fuera del repo) y nunca se cambia. Para compilar la firma de publicación en local, definir
+  `VIBETUBE_KEYSTORE_PATH` con la ruta del respaldo; sin esa variable se usa la firma debug.
 - Al terminar cualquier cambio, actualiza `ESTADO.md` (y este archivo si cambió la forma de
   trabajar) en el mismo commit.

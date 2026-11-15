@@ -1,0 +1,115 @@
+name: Publicar APK
+
+# Se ejecuta al subir una etiqueta vX.Y.Z (desde main). Compila, firma con la llave de VibeTube
+# (secreto VIBETUBE_KEYSTORE_BASE64), comprueba el certificado y publica VibeTube-vX.Y.Z.apk en un
+# release que GitHub marca como Latest. El actualizador de la app lee ese release.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Compilar y publicar versión
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      VIBETUBE_KEYSTORE_BASE64: ${{ secrets.VIBETUBE_KEYSTORE_BASE64 }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Descargar el código con submódulos
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Configurar Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Comprobar versión de la etiqueta
+        shell: bash
+        run: |
+          # En app/build.gradle la versión está escrita con Groovy: versionName '0.4.1'.
+          version_name="$(
+            sed -n "s/.*versionName '\([^']*\)'.*/\1/p" \
+              app/build.gradle
+          )"
+          echo "Versión del proyecto: $version_name"
+          test "v$version_name" = "$GITHUB_REF_NAME"
+
+      - name: Comprobar el secreto de firma
+        if: ${{ env.VIBETUBE_KEYSTORE_BASE64 == '' }}
+        shell: bash
+        run: |
+          echo "Falta el secreto VIBETUBE_KEYSTORE_BASE64."
+          exit 1
+
+      - name: Restaurar la llave de firma
+        shell: bash
+        run: |
+          keystore_path="$RUNNER_TEMP/vibetube.keystore"
+          printf '%s' "$VIBETUBE_KEYSTORE_BASE64" \
+            | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
+          echo "VIBETUBE_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
+
+      - name: Probar y compilar
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Verificar que la firma es la de VibeTube
+        shell: bash
+        run: |
+          apksigner_path="$(
+            find "$ANDROID_HOME/build-tools" -type f -name apksigner \
+              | sort -V | tail -n 1
+          )"
+          certificate_output="$(
+            "$apksigner_path" verify --print-certs \
+              app/build/outputs/apk/debug/app-debug.apk 2>&1
+          )"
+          echo "$certificate_output"
+          actual="$(
+            printf '%s\n' "$certificate_output" \
+              | grep -oE '[0-9a-fA-F]{64}' | head -n 1 | tr 'A-F' 'a-f'
+          )"
+          expected="87b1fb67135e1b12ac5743764fb12ddaa129446b7e452b8e5e30c8b6a590eaac"
+          echo "Certificado SHA-256: $actual"
+          test "$actual" = "$expected"
+
+      - name: Preparar el APK
+        id: apk
+        shell: bash
+        run: |
+          apk_name="VibeTube-${GITHUB_REF_NAME}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$apk_name"
+          echo "name=$apk_name" >> "$GITHUB_OUTPUT"
+
+      - name: Conservar el APK como artefacto
+        uses: actions/upload-artifact@v7
+        with:
+          name: VibeTube-${{ github.ref_name }}
+          path: ${{ steps.apk.outputs.name }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publicar la versión descargable
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ steps.apk.outputs.name }}" \
+            --verify-tag \
+            --title "VibeTube ${GITHUB_REF_NAME#v}" \
+            --generate-notes

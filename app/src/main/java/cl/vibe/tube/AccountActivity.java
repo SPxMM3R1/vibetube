@@ -16,7 +16,11 @@ import android.widget.TextView;
 import com.liskovsoft.googlecommon.common.models.auth.UserCode;
 import com.liskovsoft.mediaserviceinterfaces.oauth.Account;
 
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 import io.reactivex.Observable;
 import io.reactivex.android.schedulers.AndroidSchedulers;
@@ -35,13 +39,17 @@ public class AccountActivity extends Activity {
     private final CompositeDisposable disposables = new CompositeDisposable();
     /** Descarta el ACTION_UP de OK que abrió esta pantalla (clic fantasma). */
     private final ClickGuard clicks = new ClickGuard();
+    private final AppUpdater.Listener updateListener = this::refreshUpdate;
     private FrameLayout root;
     private LinearLayout body;
+    private AppUpdater updater;
+    private TextView updateStatus;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Ui.init(this);
+        updater = AppUpdater.get(this);
         root = new FrameLayout(this);
         // Las acciones crecen al tener el foco (1,07×): ningún contenedor las recorta.
         root.setClipChildren(false);
@@ -62,10 +70,41 @@ public class AccountActivity extends Activity {
         bodyParams.setMargins(Ui.px(64), Ui.px(150), 0, 0);
         root.addView(body, bodyParams);
 
+        // Fila «Actualizaciones» al final de la pantalla, con o sin cuenta.
+        LinearLayout updates = new LinearLayout(this);
+        updates.setGravity(Gravity.CENTER_VERTICAL);
+        updates.setClipChildren(false);
+        updateStatus = Ui.text(this, 15, Ui.MUTED, false);
+        updateStatus.setMaxLines(1);
+        updateStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        updates.addView(updateStatus, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView updateCheck = Ui.option(this, Focus.LINE, "Buscar ahora", 16);
+        updateCheck.setOnClickListener(v -> updater.checkNow());
+        LinearLayout.LayoutParams checkParams = new LinearLayout.LayoutParams(-2, -2);
+        checkParams.setMarginStart(Ui.px(34));
+        updates.addView(updateCheck, checkParams);
+        FrameLayout.LayoutParams updatesParams = new FrameLayout.LayoutParams(Ui.px(1152), -2, Gravity.BOTTOM | Gravity.START);
+        updatesParams.setMargins(Ui.px(64), 0, Ui.px(64), Ui.px(40));
+        root.addView(updates, updatesParams);
+
         setContentView(root);
         root.getViewTreeObserver().addOnGlobalFocusChangeListener(new Focus(root));
         if (Session.isSigned()) showAccounts();
         else startSignIn();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updater.addListener(updateListener);
+        updater.onResume();
+        refreshUpdate();
+    }
+
+    @Override
+    protected void onPause() {
+        updater.removeListener(updateListener);
+        super.onPause();
     }
 
     @Override
@@ -241,6 +280,45 @@ public class AccountActivity extends Activity {
                     Log.w(TAG, "No se cerró la sesión", error);
                     showAccounts();
                 }));
+    }
+
+    /**
+     * La fila «Actualizaciones»: versión instalada y lo último que pasó con la revisión, p. ej.
+     * «VibeTube 0.4.1 · revisado hoy a las 16:02 · estás al día».
+     */
+    private void refreshUpdate() {
+        UpdateInfo next = updater.available();
+        String state;
+        if (updater.isChecking()) {
+            state = "buscando la versión nueva…";
+        } else if (updater.isDownloading() && next != null) {
+            state = "descargando " + next.getVersionName() + " · " + updater.getProgress() + " %";
+        } else if (updater.getInstallError() != null) {
+            state = "no se pudo instalar: " + updater.getInstallError();
+        } else if (updater.isCheckFailed()) {
+            state = "no se pudo revisar";
+        } else if (updater.getCheckedAt() <= 0) {
+            state = "sin revisar todavía";
+        } else if (next != null) {
+            state = "revisado " + checkedText(updater.getCheckedAt())
+                    + " · hay una versión nueva: " + next.getVersionName();
+        } else {
+            state = "revisado " + checkedText(updater.getCheckedAt()) + " · estás al día";
+        }
+        updateStatus.setText("VibeTube " + updater.currentVersion() + " · " + state);
+    }
+
+    /** «hoy a las 16:02», o «el 14 de nov a las 16:02» si fue otro día. */
+    private static String checkedText(long at) {
+        Calendar then = Calendar.getInstance();
+        then.setTimeInMillis(at);
+        Calendar now = Calendar.getInstance();
+        String hour = new SimpleDateFormat("HH:mm", Locale.US).format(new Date(at));
+        boolean today = then.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+                && then.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR);
+        if (today) return "hoy a las " + hour;
+        String day = new SimpleDateFormat("d 'de' MMM", new Locale("es", "CL")).format(new Date(at));
+        return "el " + day + " a las " + hour;
     }
 
     /** Texto de una línea o más, dentro de la columna de 760. */

@@ -11,7 +11,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.speech.RecognizerIntent;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -91,6 +94,10 @@ public class MainActivity extends Activity implements Tiles.Actions {
     private TextView clock;
     private SearchView search;
     private Focus focus;
+    /** Aviso de versión nueva: una línea en el Inicio, con OK para instalar. */
+    private TextView updateBanner;
+    private AppUpdater updater;
+    private final AppUpdater.Listener updateListener = this::refreshUpdate;
     private Disposable metaRequest;
     private MediaItem current;
     /** Si la cuenta estaba iniciada al armar la pantalla; si cambia, Inicio se vuelve a armar. */
@@ -119,17 +126,23 @@ public class MainActivity extends Activity implements Tiles.Actions {
         Ui.init(this);
         signed = Session.isSigned();
         hiddenVersion = Hidden.version();
+        updater = AppUpdater.get(this);
         root = buildRoot();
         setContentView(root);
         focus = new Focus(root);
         root.getViewTreeObserver().addOnGlobalFocusChangeListener(focus);
         clockTick.run();
         select(TAB_HOME);
+        // Al abrir la app: revisa la versión nueva como máximo cada 6 horas.
+        updater.checkIfDue();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        updater.addListener(updateListener);
+        updater.onResume();
+        refreshUpdate();
         // Si se ocultó o mostró un canal en la página de Canal, las filas ya cargadas no lo saben: se rehacen.
         // Lo mismo si la cuenta cambió en la pantalla de Cuenta: Inicio vuelve a armarse, ya con sesión.
         if (Hidden.version() != hiddenVersion || Session.isSigned() != signed) {
@@ -137,6 +150,12 @@ public class MainActivity extends Activity implements Tiles.Actions {
             return;
         }
         checkNetwork();
+    }
+
+    @Override
+    protected void onPause() {
+        updater.removeListener(updateListener);
+        super.onPause();
     }
 
     @Override
@@ -241,7 +260,41 @@ public class MainActivity extends Activity implements Tiles.Actions {
         FrameLayout.LayoutParams offlineParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
         offlineParams.setMargins(Ui.px(64), Ui.px(96), 0, 0);
         root.addView(offline, offlineParams);
+
+        // Aviso de versión nueva: una línea bajo la barra, enfocable; OK descarga e instala.
+        updateBanner = Ui.option(this, Focus.LINE, "", 15);
+        updateBanner.setVisibility(View.GONE);
+        updateBanner.setOnClickListener(v -> updater.install());
+        FrameLayout.LayoutParams bannerParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
+        bannerParams.setMargins(Ui.px(64), Ui.px(96), 0, 0);
+        root.addView(updateBanner, bannerParams);
         return root;
+    }
+
+    /**
+     * Muestra el aviso solo en el Inicio y solo si hay una versión nueva. Durante la descarga
+     * dice el porcentaje; si la instalación falló, lo dice y ofrece reintentar.
+     */
+    private void refreshUpdate() {
+        UpdateInfo next = updater.available();
+        if (next == null || tab != TAB_HOME) {
+            updateBanner.setVisibility(View.GONE);
+            return;
+        }
+        String version = next.getVersionName();
+        String message;
+        if (updater.isDownloading()) {
+            message = "Descargando " + version + " · " + updater.getProgress() + " %";
+        } else if (updater.getInstallError() != null) {
+            message = "No se pudo instalar " + version + ": " + updater.getInstallError() + " · OK para reintentar";
+        } else {
+            message = "Hay una versión nueva · " + version + " · OK para instalar";
+        }
+        // El punto cian va antes del texto, como en el aviso del mockup.
+        SpannableStringBuilder line = new SpannableStringBuilder("●  " + message);
+        line.setSpan(new ForegroundColorSpan(NOW), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        updateBanner.setText(line);
+        updateBanner.setVisibility(View.VISIBLE);
     }
 
     /** Sin cuenta, Suscripciones y Biblioteca solo dicen cómo entrar y ofrecen la acción. */
@@ -305,6 +358,7 @@ public class MainActivity extends Activity implements Tiles.Actions {
             load(which);
         }
         if (rowsTab) ((RowsView) target).enter();
+        refreshUpdate();
         focusFirst(which);
     }
 
