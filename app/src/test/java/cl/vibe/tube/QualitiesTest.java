@@ -7,6 +7,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /** Agrupación de calidades por pantalla y etiquetas de la franja de Calidad. */
 public class QualitiesTest {
@@ -65,5 +67,27 @@ public class QualitiesTest {
         List<Qualities.Screen> screens = Qualities.screens(all);
         assertEquals(1, screens.size());
         assertEquals(480, screens.get(0).height);
+    }
+
+    @Test
+    public void laMayorSiempreMuestraSuEtiqueta() {
+        assertTrue(Qualities.labelFits(new int[] {100}, new int[] {56}, 0, 12, 4));
+    }
+
+    @Test
+    public void etiquetaOcultaSiLaPantallaSiguienteQuedaPegada() {
+        // 360p y 240p de 56 px de ancho: a 0 px de distancia horizontal, sin lugar para el número.
+        int[] widths = {200, 100, 67, 56, 56};
+        int[] heights = {112, 56, 38, 31, 31};
+        assertTrue(Qualities.labelFits(widths, heights, 1, 12, 4));
+        assertFalse(Qualities.labelFits(widths, heights, 3, 12, 4));
+        assertFalse(Qualities.labelFits(widths, heights, 4, 12, 4));
+    }
+
+    @Test
+    public void etiquetaCabeJustoAUnLabelMasGap() {
+        // dx = 16 = 12 + 4 (cabe); dy = 9 < 16 (no cabe): en vertical y en horizontal.
+        assertFalse(Qualities.labelFits(new int[] {100, 84}, new int[] {56, 47}, 1, 12, 4));
+        assertTrue(Qualities.labelFits(new int[] {100, 84}, new int[] {56, 40}, 1, 12, 4));
     }
 }

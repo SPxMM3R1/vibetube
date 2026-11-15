@@ -871,6 +871,15 @@ public class PlayerActivity extends Activity {
             }
         }
 
+        // Pistas con el mismo rótulo: la segunda lleva «· 2», etc.
+        List<String> audioNames = new ArrayList<>();
+        for (TrackRef track : newAudios) audioNames.add(track.label);
+        List<String> unique = AudioLabels.unique(audioNames);
+        for (int i = 0; i < newAudios.size(); i++) {
+            TrackRef track = newAudios.get(i);
+            newAudios.set(i, new TrackRef(track.group, track.index, unique.get(i), track.selected));
+        }
+
         String signature = videoSignature(newVideos);
         if (!signature.equals(videoSignature)) {
             boolean hadChoice = chosen != null;
@@ -923,14 +932,29 @@ public class PlayerActivity extends Activity {
         restyleScreens();
     }
 
-    /** Verde con relleno la pantalla que suena; blanca la que tiene el foco. */
+    /**
+     * Verde con relleno la pantalla que suena; blanca la que tiene el foco. La etiqueta se muestra
+     * si cabe junto a la de la pantalla mayor (Qualities.labelFits); la que tiene el foco siempre
+     * la muestra. Una etiqueta que no cabe queda oculta: la resolución sale en el detalle.
+     */
     private void restyleScreens() {
         int playing = playingHeight();
-        for (int i = 0; i < screenBoxes.length; i++) {
+        int n = screenBoxes.length;
+        int[] widths = new int[n];
+        int[] heights = new int[n];
+        for (int i = 0; i < n; i++) {
+            widths[i] = screenBoxes[i].getLayoutParams().width;
+            heights[i] = screenBoxes[i].getLayoutParams().height;
+        }
+        int labelHeight = n == 0 ? 0 : Math.round(screenLabels[0].getPaint().getFontSpacing());
+        int gap = Ui.px(4);
+        for (int i = 0; i < n; i++) {
             boolean focused = screenBoxes[i].hasFocus();
             boolean playingHere = screens.get(i).height == playing;
             screenBoxes[i].setBackground(screenFrame(focused, playingHere));
             screenLabels[i].setTextColor(focused ? Color.WHITE : playingHere ? Ui.LIVE : Ui.MUTED);
+            boolean shown = focused || Qualities.labelFits(widths, heights, i, labelHeight, gap);
+            screenLabels[i].setVisibility(shown ? View.VISIBLE : View.INVISIBLE);
         }
     }
 
@@ -1450,13 +1474,16 @@ public class PlayerActivity extends Activity {
         return line.toString();
     }
 
-    /** Nombre de una pista de audio: el idioma, con «Original» si es la pista principal. */
+    /**
+     * Rótulo de una pista de audio: idioma, códec y bitrate (AudioLabels), con «Original» si es la
+     * pista principal y «(doblaje automático)» si el formato lo dice.
+     */
     private static String audioName(Format format) {
-        String name = languageName(format.language, "Pista");
         String label = format.label == null ? "" : format.label.toLowerCase(Locale.ROOT);
         boolean original = (format.roleFlags & C.ROLE_FLAG_MAIN) != 0 || label.contains("original");
         boolean dubbed = !original && (label.contains("auto") || label.contains("dub"));
-        return (original ? "Original · " : "") + name + (dubbed ? " (doblaje automático)" : "");
+        return AudioLabels.label(format.language, format.codecs, format.sampleMimeType, format.bitrate,
+                original, dubbed);
     }
 
     private static String textName(Format format) {

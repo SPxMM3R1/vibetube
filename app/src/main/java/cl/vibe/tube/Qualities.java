@@ -93,6 +93,18 @@ final class Qualities {
         return v.hdr ? text + " · HDR" : text;
     }
 
+    /**
+     * Si la etiqueta de la pantalla i cabe, sin pisar a la de la pantalla inmediatamente mayor: su
+     * esquina superior derecha tiene que quedar al menos labelHeight + gap por debajo y a la
+     * izquierda de la de la pantalla anterior, en vertical y en horizontal. Las pantallas van de
+     * mayor a menor, en px; la primera siempre cabe.
+     */
+    static boolean labelFits(int[] widths, int[] heights, int i, int labelHeight, int gap) {
+        if (i <= 0) return true;
+        int need = labelHeight + gap;
+        return widths[i - 1] - widths[i] >= need && heights[i - 1] - heights[i] >= need;
+    }
+
     /** Ancho de la pantalla de una resolución: proporcional a su alto frente a la mayor, mínimo 56. */
     static int width(int height, int maxHeight) {
         if (maxHeight <= 0) return TOP_WIDTH;

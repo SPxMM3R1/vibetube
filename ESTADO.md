@@ -14,11 +14,13 @@
   correcciones de esta misma versión (directos, clic fantasma y ◀ ▶; ver abajo).
 - **Probado en el emulador por el revisor** (APK de la primera corrección): título en 2 líneas;
   «DESPUÉS · 39:14»; eyebrow y «Seguir sin cuenta» sin recorte; «Subtítulos» atenuado.
-- **Probado por el revisor en el emulador** (commit 71654d0): los directos Meganoticias y CHV
-  Noticias reproducen y avanzan; CHV en 1080p VP9.
-- **Pendiente de prueba del revisor** (cuarta corrección, sobre 71654d0): ◀ ▶ entre acciones y en la
-  franja de Calidad, el clic fantasma, el reintento de directo y su cierre a los 3 s, y el resto de
-  la entrega 3. Lo compiló y probó solo la JVM; no se usó el emulador en esta ronda.
+- **Probado por el revisor en el emulador**: los directos Meganoticias y CHV Noticias reproducen y
+  avanzan (commit 71654d0; CHV en 1080p VP9). Con 36028e8: ◀ ▶ entre acciones (log «moveAction de 0
+  a 1», salta «Subtítulos») y la franja de Calidad con CHV (1080p, 5.4 Mbps, 30 fps).
+- **Pendiente de prueba del revisor** (sexta corrección, sobre 36028e8): etiquetas de Calidad que no
+  se pisan y rótulos de audio. Lo compiló y probó solo la JVM; no se usó el emulador en esta ronda.
+  Sin probar todavía: el clic fantasma, el reintento de directo y su cierre a los 3 s, y el resto de
+  la entrega 3.
 - **Idioma y región**: `es` / `CL`, fijados en `TubeApp.onCreate` antes de cualquier pedido.
 - **Repositorio**: solo local. El repositorio público `SPxMM3R1/vibetube`, las etiquetas y los
   releases los crea y publica el revisor. CI en `.github/workflows/android-ci.yml`.
@@ -61,7 +63,10 @@
 - **Calidad**: franja abajo con pantallas anidadas (una por resolución, la mayor abajo a la
   izquierda; verde con relleno la que suena; blanca la que tiene el foco). Auto por defecto. Si
   hay variantes del mismo alto (1080p60 y 1080p), ◀ ▶ sobre la pantalla cambian cuál; el detalle
-  muestra cuál. Se aplica con `TrackSelectionOverride`. Audio: las pistas del reproductor.
+  muestra cuál. Se aplica con `TrackSelectionOverride`. Audio: las pistas del reproductor, rotuladas
+  con idioma, códec y kbps (`AudioLabels`, p. ej. «Español · AAC · 128 kbps»); si se repiten, la
+  segunda lleva «· 2». Una etiqueta de pantalla que pisaría la de la pantalla mayor queda oculta
+  (`Qualities.labelFits`, con 4 dp de separación); la que tiene el foco siempre muestra la suya.
 - **Canal**: «Suscribirse» sin cuenta lleva a Cuenta; con cuenta se suscribe o se quita.
 
 ## Decisiones tomadas fuera de la especificación
@@ -110,6 +115,12 @@
    el revisor.
 
 ## Bitácora (más reciente arriba)
+
+- 2026-11-15 — 0.4.0, sexta corrección (sin emulador: lo prueba el revisor). A: en la franja de
+  Calidad, una etiqueta de pantalla que pisaría la de la mayor se oculta (`Qualities.labelFits`);
+  la que tiene el foco siempre se ve. B: las pistas de audio se rotulan con idioma en español,
+  códec y kbps (`AudioLabels`), y las repetidas llevan «· 2». Pruebas JVM nuevas: `AudioLabelsTest`
+  y casos de `labelFits` en `QualitiesTest`.
 
 - 2026-11-15 — 0.4.0, quinta corrección (sin emulador: lo prueba el revisor). `isInside` nunca
   subía desde un `View` (un TextView no es `ViewParent`), así que `inActions()` era siempre falso
