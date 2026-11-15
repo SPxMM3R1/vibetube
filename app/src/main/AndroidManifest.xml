@@ -11,8 +11,8 @@
     <application
         android:name=".TubeApp"
         android:label="VibeTube"
-        android:banner="@drawable/banner"
-        android:icon="@drawable/banner"
+        android:banner="@drawable/vibetube_banner"
+        android:icon="@drawable/vibetube_banner"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:usesCleartextTraffic="true"
         android:largeHeap="true">

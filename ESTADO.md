@@ -226,6 +226,8 @@
 
 ## Bitácora (más reciente arriba)
 
+- 2026-11-15 — Ícono del launcher igual al de las otras Vibe (pedido del usuario: «genera un ícono para el launcher como el de los otros Vibe»): `drawable-nodpi/vibetube_banner.png` (320 × 180, fondo transparente) con el televisor y «Vibe» del banner de VibeDLNA Player y «Tube» en cian `#02C8FD` (Poppins SemiBold, misma altura de minúsculas). Reemplaza al vector `drawable/banner.xml`, que se borró. Va en la 0.4.2.
+
 - 2026-11-15 — 0.4.2: arreglos de navegación con el control (sin emulador: lo prueba el revisor).
   Pestañas: ◀ ▶ solo mueven el foco; OK o 600 ms sobre una pestaña muestran la sección sin quitar el
   foco; ▼ baja y vuelve a la última tarjeta con foco; ▲ desde la primera fila lleva a la pestaña
