@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="image_url" type="id" />
+    <!-- Tipo de foco de una vista: Focus.LINE o Focus.RING. -->
+    <item name="focus_mode" type="id" />
+    <!-- Elegido (sin foco): true o false, lo lee Ui.restyle. -->
+    <item name="option_selected" type="id" />
 </resources>

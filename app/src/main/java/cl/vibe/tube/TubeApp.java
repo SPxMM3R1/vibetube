@@ -11,6 +11,7 @@ public class TubeApp extends Application {
     public void onCreate() {
         super.onCreate();
         GlobalPreferences.instance(this);
+        Hidden.init(this);
         // Idioma y región fijos antes de cualquier pedido: el núcleo los lee de LocaleManager
         // (sin esto las filas llegan en en-US). Se fijan aquí y no según el idioma del equipo.
         LocaleManager.instance().setLanguage("es");

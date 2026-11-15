@@ -1,401 +1,469 @@
 package cl.vibe.tube;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.speech.RecognizerIntent;
 import android.text.TextUtils;
 import android.util.Log;
-import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.KeyEvent;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.animation.PathInterpolator;
-import android.view.inputmethod.EditorInfo;
-import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.liskovsoft.mediaserviceinterfaces.ContentService;
-import com.liskovsoft.mediaserviceinterfaces.data.MediaGroup;
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItem;
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata;
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.CompositeDisposable;
+import io.reactivex.disposables.Disposable;
 import io.reactivex.schedulers.Schedulers;
 
 /**
- * Inicio y búsqueda con el lenguaje «Flotante minimalista» de VibeM3U: el video marcado de fondo,
- * texto que flota sobre una sola capa de degradado, foco = blanco en negrita y bloque levantado.
+ * Inicio, Suscripciones, En vivo, Biblioteca y Buscar con el lenguaje «Flotante minimalista» de
+ * VibeM3U: el video marcado de fondo, texto que flota sobre una sola capa de degradado, foco =
+ * blanco en negrita con la línea que viaja. Medidas del mockup «cliente-videos» (versión 1).
  */
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements Tiles.Actions {
     static final String TAG = "VibeTube";
-    static final PathInterpolator SPRING = new PathInterpolator(0.34f, 1.42f, 0.64f, 1f);
-    static final int LIVE = 0xFF5BE9A0;
-    static final int NOW = 0xFF00B8D9;
+    static final PathInterpolator SPRING = Ui.SPRING;
+    static final int LIVE = Ui.LIVE;
+    static final int NOW = Ui.NOW;
+
+    static final int TAB_HOME = 0;
+    static final int TAB_SUBS = 1;
+    static final int TAB_LIVE = 2;
+    static final int TAB_LIBRARY = 3;
+    static final int TAB_SEARCH = 4;
+    private static final String[] TAB_NAMES = {"Inicio", "Suscripciones", "En vivo", "Biblioteca", "Buscar"};
+    /** Inicio, Suscripciones, En vivo y Biblioteca comparten la forma: detalle arriba y filas abajo. */
+    private static final int ROWS_TOP = 340;
+    /**
+     * Zona de filas: dos filas de 187 y 8 de separación (382) caben de sobra. Un poco más alta que
+     * la pantalla para que enfocar una tarjeta levantada no desplace la columna (y se coma el Arriba).
+     */
+    private static final int ROWS_HEIGHT = 420;
+    private static final int DESCRIPTION_DELAY_MS = 350;
 
     private final CompositeDisposable disposables = new CompositeDisposable();
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Map<String, String> descriptions = new HashMap<>();
+    private final TextView[] tabs = new TextView[TAB_NAMES.length];
+    private final RowsView[] sections = new RowsView[4];
+    private final LinearLayout[] prompts = new LinearLayout[4];
+    private final TextView[] promptActions = new TextView[4];
+    private final boolean[] loaded = new boolean[TAB_NAMES.length];
+    private FrameLayout root;
+    private FrameLayout content;
     private ImageView hero;
-    private TextView heroEyebrow, heroTitle, heroMeta, status, clock;
-    private LinearLayout rows;
-    private ScrollView rowsScroll;
-    private EditText searchBox;
-    private TextView tabHome, tabSearch;
-    private boolean searchMode;
+    private View shadeLeft;
+    private View shadeBottom;
+    private LinearLayout detail;
+    private TextView detailEyebrow;
+    private TextView detailTitle;
+    private TextView detailDesc;
+    private TextView detailMeta;
+    private TextView offline;
+    private TextView clock;
+    private SearchView search;
+    private Focus focus;
+    private Disposable metaRequest;
+    private MediaItem current;
+    private boolean signed;
+    private int hiddenVersion;
+    private int tab = -1;
+
     private final Runnable clockTick = new Runnable() {
-        @Override public void run() {
-            clock.setText(new SimpleDateFormat("EEEE d · HH:mm", new Locale("es")).format(new Date()));
+        @Override
+        public void run() {
+            Date now = new Date();
+            String day = new SimpleDateFormat("EEEE d", new Locale("es", "CL")).format(now);
+            String time = new SimpleDateFormat("HH:mm", Locale.US).format(now);
+            clock.setText(capitalize(day) + " · " + time);
             clock.postDelayed(this, 20_000);
         }
+    };
+
+    private final Runnable descriptionLater = () -> {
+        if (current != null) loadDescription(current);
     };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(buildLayout());
+        Ui.init(this);
+        signed = YouTubeServiceManager.instance().getSignInService().isSigned();
+        hiddenVersion = Hidden.version();
+        root = buildRoot();
+        setContentView(root);
+        focus = new Focus(root);
+        root.getViewTreeObserver().addOnGlobalFocusChangeListener(focus);
         clockTick.run();
-        loadHome();
+        select(TAB_HOME);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Si se ocultó o mostró un canal en la página de Canal, las filas ya cargadas no lo saben: se rehacen.
+        if (Hidden.version() != hiddenVersion) {
+            recreate();
+            return;
+        }
+        checkNetwork();
     }
 
     @Override
     protected void onDestroy() {
         disposables.clear();
+        handler.removeCallbacksAndMessages(null);
+        clock.removeCallbacks(clockTick);
         super.onDestroy();
     }
 
-    int dp(float value) {
-        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics()));
-    }
-
-    TextView text(float sp, int color, boolean bold) {
-        TextView view = new TextView(this);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
-        view.setTextColor(color);
-        view.setTypeface(Typeface.create(bold ? "sans-serif" : "sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL));
-        view.setShadowLayer(dp(5), 0, dp(1), 0x73000000);
-        view.setIncludeFontPadding(false);
-        return view;
-    }
-
-    TextView eyebrow(String value, int alphaColor) {
-        TextView view = text(10.5f, alphaColor, false);
-        view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        view.setLetterSpacing(0.2f);
-        view.setAllCaps(true);
-        view.setText(value);
-        view.setSingleLine(true);
-        return view;
-    }
-
-    private View buildLayout() {
+    private FrameLayout buildRoot() {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
         hero = new ImageView(this);
         hero.setScaleType(ImageView.ScaleType.CENTER_CROP);
         root.addView(hero, new FrameLayout.LayoutParams(-1, -1));
-        // Una sola capa: desde la izquierda (detalle) y desde abajo (filas).
-        View left = new View(this);
-        left.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+        // Una sola capa de velos: desde la izquierda (detalle) y desde abajo (filas).
+        shadeLeft = new View(this);
+        shadeLeft.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{0xD9000000, 0x8C000000, 0x00000000}));
-        root.addView(left, new FrameLayout.LayoutParams(-1, -1));
-        View bottom = new View(this);
-        bottom.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
+        root.addView(shadeLeft, new FrameLayout.LayoutParams(-1, -1));
+        shadeBottom = new View(this);
+        shadeBottom.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
                 new int[]{0xF2000000, 0xB3000000, 0x00000000}));
-        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(-1, dp(420), Gravity.BOTTOM);
-        root.addView(bottom, bottomParams);
+        root.addView(shadeBottom, new FrameLayout.LayoutParams(-1, Ui.px(430), Gravity.BOTTOM));
 
-        LinearLayout column = new LinearLayout(this);
-        column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(48), dp(28), 0, 0);
-        root.addView(column, new FrameLayout.LayoutParams(-1, -1));
+        content = new FrameLayout(this);
+        root.addView(content, new FrameLayout.LayoutParams(-1, -1));
+        for (int i = 0; i < sections.length; i++) {
+            sections[i] = new RowsView(this, this, disposables, ROWS_TOP, ROWS_HEIGHT);
+            content.addView(sections[i], new FrameLayout.LayoutParams(-1, -1));
+        }
+        for (int i : new int[]{TAB_SUBS, TAB_LIBRARY}) {
+            prompts[i] = signPrompt(i);
+            FrameLayout.LayoutParams promptParams = new FrameLayout.LayoutParams(Ui.px(640), -2, Gravity.TOP | Gravity.START);
+            promptParams.setMargins(Ui.px(64), Ui.px(136), 0, 0);
+            content.addView(prompts[i], promptParams);
+        }
+        search = new SearchView(this, this, disposables);
+        content.addView(search, new FrameLayout.LayoutParams(-1, -1));
 
+        // Barra superior: eyebrow, pestañas y reloj, a la altura del mockup (40).
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(0, 0, dp(48), 0);
-        top.addView(eyebrow("VibeTube", 0x99FFFFFF));
-        tabHome = tab("Inicio", () -> { if (searchMode) { searchMode = false; refreshTabs(); loadHome(); } });
-        tabSearch = tab("Buscar", () -> { searchMode = true; refreshTabs(); searchBox.requestFocus(); });
-        top.addView(tabHome);
-        top.addView(tabSearch);
+        top.addView(Ui.eyebrow(this, "VibeTube", Ui.EYEBROW));
+        for (int i = 0; i < TAB_NAMES.length; i++) {
+            final int which = i;
+            TextView view = Ui.option(this, Focus.LINE, TAB_NAMES[i], 16);
+            view.setOnClickListener(v -> select(which));
+            view.setId(View.generateViewId());
+            tabs[i] = view;
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
+            params.setMarginStart(Ui.px(34));
+            top.addView(view, params);
+        }
+        // «Iniciar sesión» queda debajo de la pestaña: Arriba debe llegar a ella aunque no se solapen en x.
+        for (int i : new int[]{TAB_SUBS, TAB_LIBRARY}) promptActions[i].setNextFocusUpId(tabs[i].getId());
         View spacer = new View(this);
         top.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-        clock = text(13, 0x9EFFFFFF, false);
+        clock = Ui.text(this, 15, Ui.MUTED, false);
         top.addView(clock);
-        column.addView(top);
+        FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP | Gravity.START);
+        topParams.setMargins(Ui.px(64), Ui.px(40), Ui.px(64), 0);
+        root.addView(top, topParams);
 
-        heroEyebrow = eyebrow("", 0x99FFFFFF);
-        LinearLayout.LayoutParams eyebrowParams = new LinearLayout.LayoutParams(-2, -2);
-        eyebrowParams.topMargin = dp(48);
-        column.addView(heroEyebrow, eyebrowParams);
-        heroTitle = text(30, Color.WHITE, true);
-        heroTitle.setLetterSpacing(-0.015f);
-        heroTitle.setMaxLines(2);
-        heroTitle.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(dp(560), -2);
-        titleParams.topMargin = dp(10);
-        column.addView(heroTitle, titleParams);
-        heroMeta = text(12, 0x9EFFFFFF, false);
+        // Detalle del video marcado: eyebrow, título, descripción y línea tenue.
+        detail = new LinearLayout(this);
+        detail.setOrientation(LinearLayout.VERTICAL);
+        detailEyebrow = Ui.eyebrow(this, "", Ui.EYEBROW);
+        detail.addView(detailEyebrow, new LinearLayout.LayoutParams(-1, -2));
+        detailTitle = Ui.text(this, 40, Ui.WHITE, true);
+        detailTitle.setLetterSpacing(-0.015f);
+        detailTitle.setLineSpacing(0f, 0.92f);
+        detailTitle.setMaxLines(2);
+        detailTitle.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
+        titleParams.topMargin = Ui.px(12);
+        detail.addView(detailTitle, titleParams);
+        detailDesc = Ui.text(this, 16, Ui.MUTED, false);
+        detailDesc.setMaxLines(2);
+        detailDesc.setLineSpacing(0f, 1.25f);
+        detailDesc.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(-1, -2);
+        descParams.topMargin = Ui.px(10);
+        detail.addView(detailDesc, descParams);
+        detailMeta = Ui.text(this, 13, Ui.DIM, false);
         LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(-2, -2);
-        metaParams.topMargin = dp(10);
-        column.addView(heroMeta, metaParams);
+        metaParams.topMargin = Ui.px(8);
+        detail.addView(detailMeta, metaParams);
+        FrameLayout.LayoutParams detailParams = new FrameLayout.LayoutParams(Ui.px(640), -2, Gravity.TOP | Gravity.START);
+        detailParams.setMargins(Ui.px(64), Ui.px(136), 0, 0);
+        root.addView(detail, detailParams);
 
-        searchBox = new EditText(this);
-        searchBox.setSingleLine(true);
-        searchBox.setHint("Escribe y presiona Enter");
-        searchBox.setHintTextColor(0x66FFFFFF);
-        searchBox.setTextColor(Color.WHITE);
-        searchBox.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        searchBox.setBackground(null);
-        searchBox.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        searchBox.setOnEditorActionListener((view, action, event) -> {
-            String query = searchBox.getText().toString().trim();
-            if (!query.isEmpty()) search(query);
-            return true;
-        });
-        searchBox.setVisibility(View.GONE);
-        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(dp(560), -2);
-        searchParams.topMargin = dp(8);
-        column.addView(searchBox, searchParams);
-
-        status = text(13, 0x9EFFFFFF, false);
-        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
-        statusParams.topMargin = dp(16);
-        column.addView(status, statusParams);
-
-        rowsScroll = new ScrollView(this);
-        rowsScroll.setClipChildren(false);
-        rowsScroll.setClipToPadding(false);
-        rowsScroll.setVerticalScrollBarEnabled(false);
-        rowsScroll.setPadding(0, dp(12), 0, dp(40));
-        rows = new LinearLayout(this);
-        rows.setOrientation(LinearLayout.VERTICAL);
-        rows.setClipChildren(false);
-        rowsScroll.addView(rows, new ScrollView.LayoutParams(-1, -2));
-        column.addView(rowsScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
-        refreshTabs();
+        offline = Ui.text(this, 13, Ui.MUTED, false);
+        offline.setText("Sin conexión a internet. Lo que ya cargó sigue aquí.");
+        offline.setVisibility(View.GONE);
+        FrameLayout.LayoutParams offlineParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
+        offlineParams.setMargins(Ui.px(64), Ui.px(96), 0, 0);
+        root.addView(offline, offlineParams);
         return root;
     }
 
-    private TextView tab(String label, Runnable action) {
-        TextView view = text(14, 0x9EFFFFFF, false);
-        view.setText(label);
-        view.setFocusable(true);
-        view.setPadding(dp(14), dp(6), dp(14), dp(6));
-        view.setOnClickListener(v -> action.run());
-        view.setOnFocusChangeListener((v, focused) -> styleTab((TextView) v, focused));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
-        params.setMarginStart(dp(14));
-        view.setLayoutParams(params);
-        return view;
+    /** Sin cuenta, Suscripciones y Biblioteca solo dicen cómo entrar y ofrecen la acción. */
+    private LinearLayout signPrompt(int which) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        String message = which == TAB_SUBS
+                ? "Inicia sesión para ver tus suscripciones."
+                : "Inicia sesión para ver tu biblioteca.";
+        TextView text = Ui.text(this, 16, Ui.MUTED, false);
+        text.setText(message);
+        box.addView(text);
+        TextView action = Ui.option(this, Focus.LINE, "Iniciar sesión", 16);
+        action.setOnClickListener(v -> Toast.makeText(this, "Pronto", Toast.LENGTH_SHORT).show());
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-2, -2);
+        actionParams.topMargin = Ui.px(14);
+        box.addView(action, actionParams);
+        promptActions[which] = action;
+        box.setVisibility(View.GONE);
+        return box;
     }
 
-    private void styleTab(TextView view, boolean focused) {
-        boolean selected = (view == tabSearch) == searchMode;
-        view.setTextColor(focused || selected ? Color.WHITE : 0x9EFFFFFF);
-        view.setTypeface(Typeface.create("sans-serif", focused || selected ? Typeface.BOLD : Typeface.NORMAL));
-        // Foco = línea fina blanca debajo del texto, nunca un fondo.
-        GradientDrawable line = new GradientDrawable();
-        line.setColor(Color.WHITE);
-        view.setForeground(focused ? underline() : null);
-        view.animate().scaleX(focused ? 1.07f : 1f).scaleY(focused ? 1.07f : 1f)
-                .setInterpolator(SPRING).setDuration(350).start();
+    /** La vista de una pestaña: sin cuenta, Suscripciones y Biblioteca muestran el aviso. */
+    private View viewOf(int which) {
+        if (which == TAB_SEARCH) return search;
+        if (!signed && (which == TAB_SUBS || which == TAB_LIBRARY)) return prompts[which];
+        return sections[which];
     }
 
-    private android.graphics.drawable.Drawable underline() {
-        GradientDrawable bar = new GradientDrawable();
-        bar.setColor(Color.WHITE);
-        android.graphics.drawable.LayerDrawable layer = new android.graphics.drawable.LayerDrawable(
-                new android.graphics.drawable.Drawable[]{bar});
-        layer.setLayerGravity(0, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL);
-        layer.setLayerHeight(0, dp(2));
-        layer.setLayerInsetLeft(0, dp(14));
-        layer.setLayerInsetRight(0, dp(14));
-        return layer;
+    private void select(int which) {
+        if (which == tab) {
+            focusFirst(which);
+            return;
+        }
+        tab = which;
+        for (int i = 0; i < tabs.length; i++) Ui.markSelected(tabs[i], i == which);
+        View target = viewOf(which);
+        for (RowsView section : sections) {
+            section.setVisibility(View.GONE);
+            section.cancelFocus();
+        }
+        for (LinearLayout prompt : prompts) {
+            if (prompt != null) prompt.setVisibility(View.GONE);
+        }
+        search.setVisibility(View.GONE);
+        target.setVisibility(View.VISIBLE);
+
+        boolean searchTab = which == TAB_SEARCH;
+        boolean rowsTab = target instanceof RowsView;
+        int media = searchTab ? View.INVISIBLE : View.VISIBLE;
+        hero.setVisibility(media);
+        shadeLeft.setVisibility(media);
+        shadeBottom.setVisibility(media);
+        detail.setVisibility(rowsTab ? View.VISIBLE : View.INVISIBLE);
+        if (!searchTab) current = null;
+
+        if (!loaded[which]) {
+            loaded[which] = true;
+            load(which);
+        }
+        if (rowsTab) ((RowsView) target).enter();
+        focusFirst(which);
     }
 
-    private void refreshTabs() {
-        styleTab(tabHome, tabHome.hasFocus());
-        styleTab(tabSearch, tabSearch.hasFocus());
-        searchBox.setVisibility(searchMode ? View.VISIBLE : View.GONE);
+    private void focusFirst(int which) {
+        root.post(() -> {
+            if (which == TAB_SEARCH) search.focusStart();
+            else if (!signed && (which == TAB_SUBS || which == TAB_LIBRARY)) promptActions[which].requestFocus();
+            else sections[which].focusFirst();
+        });
     }
 
-    private ContentService content() {
+    private void load(int which) {
+        ContentService service = content();
+        switch (which) {
+            case TAB_HOME:
+                loadHome(sections[TAB_HOME], service);
+                break;
+            case TAB_SUBS:
+                if (signed) {
+                    sections[TAB_SUBS].groups(() -> service.getSubscriptionsObserve().map(Tiles::single), false);
+                }
+                break;
+            case TAB_LIVE:
+                sections[TAB_LIVE].groups(service::getLiveObserve, true);
+                break;
+            case TAB_LIBRARY:
+                if (signed) {
+                    sections[TAB_LIBRARY].row("Historial", false)
+                            .load(() -> service.getHistoryObserve().map(Tiles::items));
+                    sections[TAB_LIBRARY].groups(service::getPlaylistRowsObserve, false);
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void loadHome(RowsView home, ContentService service) {
+        if (signed) {
+            // Con cuenta: «Seguir viendo» sale del historial y debajo, las filas del inicio.
+            home.row("Seguir viendo", false).load(() -> service.getHistoryObserve().map(Tiles::items));
+            home.groups(service::getHomeObserve, false);
+        } else {
+            // Sin cuenta YouTube no entrega el inicio: tendencias y en vivo.
+            home.row("Tendencias en Chile", false).load(() -> service.getTrendingObserve().map(Tiles::firstItems));
+            home.row("En vivo ahora", true).load(() -> service.getLiveObserve().map(Tiles::firstItems));
+        }
+    }
+
+    private static ContentService content() {
         return YouTubeServiceManager.instance().getContentService();
     }
 
-    private void loadHome() {
-        rows.removeAllViews();
-        status.setText("Cargando el inicio…");
-        disposables.add(content().getHomeObserve()
+    @Override
+    public void focused(MediaItem item) {
+        if (item == null || tab == TAB_SEARCH) return;
+        current = item;
+        showDetail(item);
+    }
+
+    @Override
+    public void play(MediaItem item) {
+        Intent intent = new Intent(this, PlayerActivity.class)
+                .putExtra(PlayerActivity.EXTRA_VIDEO_ID, item.getVideoId())
+                .putExtra(PlayerActivity.EXTRA_TITLE, safe(item.getTitle()))
+                .putExtra(PlayerActivity.EXTRA_AUTHOR, safe(item.getAuthor()));
+        startActivity(intent);
+    }
+
+    /** Las búsquedas no siempre traen el canal: en ese caso se pide a la metadata del video. */
+    @Override
+    public void channel(MediaItem item) {
+        if (!TextUtils.isEmpty(item.getChannelId())) {
+            openChannel(item, item.getChannelId());
+            return;
+        }
+        disposables.add(YouTubeServiceManager.instance().getMediaItemService().getMetadataObserve(item.getVideoId())
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(this::addGroups, error -> showError("el inicio", error), this::loaded));
+                .subscribe(meta -> {
+                    String id = meta == null ? null : meta.getChannelId();
+                    if (TextUtils.isEmpty(id)) Toast.makeText(this, "Este video no trae canal", Toast.LENGTH_SHORT).show();
+                    else openChannel(item, id);
+                }, error -> Toast.makeText(this, "No se pudo abrir el canal", Toast.LENGTH_SHORT).show()));
     }
 
-    private void search(String query) {
-        rows.removeAllViews();
-        status.setText("Buscando «" + query + "»…");
-        disposables.add(content().getSearchObserve(query)
+    private void openChannel(MediaItem item, String channelId) {
+        Intent intent = new Intent(this, ChannelActivity.class)
+                .putExtra(ChannelActivity.EXTRA_CHANNEL_ID, channelId)
+                .putExtra(ChannelActivity.EXTRA_NAME, safe(item.getAuthor()))
+                .putExtra(ChannelActivity.EXTRA_VIDEO_ID, item.getVideoId())
+                .putExtra(ChannelActivity.EXTRA_IMAGE, background(item));
+        startActivity(intent);
+    }
+
+    private void showDetail(MediaItem item) {
+        boolean live = item.isLive();
+        String second = item.getSecondTitle() == null ? "" : item.getSecondTitle().toString();
+        detailEyebrow.setText(join(" · ", live ? "● En directo" : "", safe(item.getAuthor()), second));
+        detailEyebrow.setTextColor(live ? LIVE : Ui.EYEBROW);
+        detailTitle.setText(safe(item.getTitle()));
+        String cached = descriptions.get(item.getVideoId());
+        detailDesc.setText(cached == null ? "" : cached);
+        String progress = item.getPercentWatched() > 0 ? "visto hasta el " + item.getPercentWatched() + " %" : "";
+        detailMeta.setText(live ? "En directo" : join(" · ", Ui.duration(item.getDurationMs()), progress));
+        Images.load(hero, background(item), Ui.px(960));
+        handler.removeCallbacks(descriptionLater);
+        if (cached == null) handler.postDelayed(descriptionLater, DESCRIPTION_DELAY_MS);
+    }
+
+    /** La descripción viene de la metadata del video; se pide solo cuando el foco se detiene. */
+    private void loadDescription(MediaItem item) {
+        final String id = item.getVideoId();
+        if (metaRequest != null) metaRequest.dispose();
+        metaRequest = YouTubeServiceManager.instance().getMediaItemService().getMetadataObserve(id)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(this::addGroups, error -> showError("la búsqueda", error), this::loaded));
+                .subscribe(meta -> {
+                    MediaItemMetadata data = meta;
+                    String text = data == null || data.getDescription() == null ? "" : data.getDescription().trim();
+                    descriptions.put(id, text);
+                    if (current != null && id.equals(current.getVideoId())) detailDesc.setText(text);
+                }, error -> Log.w(TAG, "Sin descripción de " + id, error));
+        disposables.add(metaRequest);
     }
 
-    private void loaded() {
-        if (rows.getChildCount() == 0) status.setText("No llegó nada. Revisa la conexión o prueba de nuevo.");
-        else status.setText("");
+    private static String background(MediaItem item) {
+        return item.getBackgroundImageUrl() != null ? item.getBackgroundImageUrl() : item.getCardImageUrl();
     }
 
-    private void showError(String what, Throwable error) {
-        Log.e(TAG, "Falló " + what, error);
-        status.setText("No se pudo cargar " + what + ": " + error.getClass().getSimpleName()
-                + (error.getMessage() != null ? " · " + error.getMessage() : ""));
+    @SuppressWarnings("deprecation")
+    private void checkNetwork() {
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo info = manager == null ? null : manager.getActiveNetworkInfo();
+        offline.setVisibility(info != null && info.isConnected() ? View.GONE : View.VISIBLE);
     }
 
-    private void addGroups(List<MediaGroup> groups) {
-        if (groups == null) return;
-        for (MediaGroup group : groups) addGroup(group);
-        if (rows.getChildCount() > 0) status.setText("");
-    }
-
-    private void addGroup(MediaGroup group) {
-        if (group == null || group.getMediaItems() == null) return;
-        LinearLayout track = new LinearLayout(this);
-        track.setClipChildren(false);
-        track.setPadding(0, dp(6), dp(48), dp(6));
-        int added = 0;
-        for (MediaItem item : group.getMediaItems()) {
-            if (item == null || TextUtils.isEmpty(item.getVideoId())) continue;
-            track.addView(tile(item));
-            added++;
-        }
-        if (added == 0) return;
-        boolean first = rows.getChildCount() == 0;
-        String title = TextUtils.isEmpty(group.getTitle()) ? (searchMode ? "Resultados" : "Para ti") : group.getTitle();
-        TextView label = eyebrow(title, 0x6BFFFFFF);
-        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-2, -2);
-        labelParams.topMargin = first ? 0 : dp(18);
-        labelParams.bottomMargin = dp(8);
-        rows.addView(label, labelParams);
-        HorizontalScrollView scroller = new HorizontalScrollView(this);
-        scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setClipChildren(false);
-        scroller.setClipToPadding(false);
-        scroller.addView(track);
-        rows.addView(scroller, new LinearLayout.LayoutParams(-1, -2));
-        if (first) {
-            View firstTile = track.getChildAt(0);
-            firstTile.post(firstTile::requestFocus);
+    /** El dictado lo pide Buscar; el texto vuelve aquí y se entrega a la pantalla de búsqueda. */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == SearchView.REQUEST_VOICE && resultCode == RESULT_OK && data != null) {
+            ArrayList<String> results = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+            if (results != null && !results.isEmpty()) search.setVoice(results.get(0));
         }
     }
 
-    private View tile(MediaItem item) {
-        LinearLayout tile = new LinearLayout(this);
-        tile.setOrientation(LinearLayout.VERTICAL);
-        tile.setFocusable(true);
-        tile.setClipChildren(false);
-        LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(dp(208), -2);
-        tileParams.setMarginEnd(dp(18));
-        tile.setLayoutParams(tileParams);
-
-        FrameLayout thumb = new FrameLayout(this);
-        GradientDrawable thumbShape = new GradientDrawable();
-        thumbShape.setColor(0xFF1A1F27);
-        thumbShape.setCornerRadius(dp(4));
-        thumb.setBackground(thumbShape);
-        thumb.setClipToOutline(true);
-        ImageView image = new ImageView(this);
-        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        thumb.addView(image, new FrameLayout.LayoutParams(-1, -1));
-        Images.load(image, item.getCardImageUrl(), dp(240));
-        TextView badge = text(10.5f, Color.WHITE, true);
-        badge.setText(item.isLive() ? "● EN VIVO" : (item.getBadgeText() != null ? item.getBadgeText() : ""));
-        if (item.isLive()) badge.setTextColor(LIVE);
-        FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.BOTTOM);
-        badgeParams.setMargins(0, 0, dp(7), dp(5));
-        thumb.addView(badge, badgeParams);
-        if (item.getPercentWatched() > 0) {
-            View progress = new View(this);
-            progress.setBackgroundColor(NOW);
-            FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(
-                    dp(208) * Math.min(100, item.getPercentWatched()) / 100, dp(3), Gravity.BOTTOM);
-            thumb.addView(progress, progressParams);
+    @Override
+    public void onBackPressed() {
+        if (tab != TAB_HOME && tab != -1) {
+            select(TAB_HOME);
+            return;
         }
-        tile.addView(thumb, new LinearLayout.LayoutParams(dp(208), dp(117)));
-
-        TextView caption = text(12, 0x9EFFFFFF, false);
-        caption.setText(item.getTitle());
-        caption.setSingleLine(true);
-        caption.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams captionParams = new LinearLayout.LayoutParams(-1, -2);
-        captionParams.topMargin = dp(9);
-        tile.addView(caption, captionParams);
-        TextView second = text(10.5f, 0x6BFFFFFF, false);
-        second.setText(item.getSecondTitle() != null ? item.getSecondTitle() : item.getAuthor());
-        second.setSingleLine(true);
-        second.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(-1, -2);
-        secondParams.topMargin = dp(3);
-        tile.addView(second, secondParams);
-
-        tile.setOnFocusChangeListener((view, focused) -> {
-            // El bloque con foco se levanta 6 % con resorte, como en la Guía de VibeM3U.
-            thumb.setPivotX(dp(104));
-            thumb.setPivotY(dp(117));
-            thumb.animate().scaleX(focused ? 1.06f : 1f).scaleY(focused ? 1.06f : 1f)
-                    .translationZ(focused ? dp(14) : 0).setInterpolator(SPRING).setDuration(350).start();
-            caption.setTextColor(focused ? Color.WHITE : 0x9EFFFFFF);
-            caption.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-            if (focused) showHero(item);
-        });
-        tile.setOnClickListener(view -> play(item));
-        return tile;
+        super.onBackPressed();
     }
 
-    private void showHero(MediaItem item) {
-        heroTitle.setText(item.getTitle());
-        CharSequence second = item.getSecondTitle();
-        heroEyebrow.setText(item.isLive() ? "● En vivo · " + safe(item.getAuthor()) : safe(second != null ? second.toString() : item.getAuthor()));
-        heroEyebrow.setTextColor(item.isLive() ? LIVE : 0x99FFFFFF);
-        heroMeta.setText(item.getBadgeText() != null ? item.getBadgeText() : "");
-        String background = item.getBackgroundImageUrl() != null ? item.getBackgroundImageUrl() : item.getCardImageUrl();
-        Images.load(hero, background, dp(960));
+    private static String capitalize(String value) {
+        return value.isEmpty() ? value : Character.toUpperCase(value.charAt(0)) + value.substring(1);
+    }
+
+    private static String join(String separator, String... parts) {
+        StringBuilder out = new StringBuilder();
+        for (String part : parts) {
+            if (part == null || part.isEmpty()) continue;
+            if (out.length() > 0) out.append(separator);
+            out.append(part);
+        }
+        return out.toString();
     }
 
     private static String safe(String value) {
         return value == null ? "" : value;
-    }
-
-    private void play(MediaItem item) {
-        Intent intent = new Intent(this, PlayerActivity.class)
-                .putExtra(PlayerActivity.EXTRA_VIDEO_ID, item.getVideoId())
-                .putExtra(PlayerActivity.EXTRA_TITLE, item.getTitle())
-                .putExtra(PlayerActivity.EXTRA_AUTHOR, item.getAuthor());
-        startActivity(intent);
-    }
-
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_BACK && searchMode) {
-            searchMode = false;
-            refreshTabs();
-            loadHome();
-            return true;
-        }
-        return super.onKeyDown(keyCode, event);
     }
 }
