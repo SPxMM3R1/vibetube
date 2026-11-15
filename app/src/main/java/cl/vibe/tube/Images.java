@@ -1,4 +1,4 @@
-package cl.vibe.videos;
+package cl.vibe.tube;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;

@@ -1,15 +1,15 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace 'cl.vibe.videos'
+    namespace 'cl.vibe.tube'
     compileSdkVersion 34
 
     defaultConfig {
-        applicationId 'cl.vibe.videos'
+        applicationId 'cl.vibe.tube'
         minSdkVersion 21
         targetSdkVersion 34
-        versionCode 1
-        versionName '0.1.0'
+        versionCode 2
+        versionName '0.2.0'
         multiDexEnabled true
         // El núcleo trae sabores (stbeta, ststable, stfdroid): usamos el estable.
         missingDimensionStrategy 'default', 'ststable'

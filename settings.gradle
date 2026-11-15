@@ -1,4 +1,4 @@
-// VibeVideos: cliente de video para Android TV con el núcleo MediaServiceCore de SmartTube (MIT).
+// VibeTube: cliente de video para Android TV con el núcleo MediaServiceCore de SmartTube (MIT).
 include ':app'
 
 def rootDir = settingsDir

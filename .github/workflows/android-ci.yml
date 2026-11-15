@@ -1,0 +1,36 @@
+# Compila el APK debug de VibeTube en cada push y pull request.
+# Necesita los submódulos MediaServiceCore y SharedModules, y JDK 17 (Gradle 7.5 no corre con JDK 21+).
+name: Android CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar el repositorio con submódulos
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Instalar JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Compilar APK debug
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug
+
+      - name: Subir APK debug como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibetube-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

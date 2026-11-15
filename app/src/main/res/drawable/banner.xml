@@ -1,10 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item><shape><solid android:color="#0B0D10" /></shape></item>
-    <item android:gravity="center" android:width="40dp" android:height="28dp">
-        <shape><corners android:radius="6dp" /><stroke android:width="3dp" android:color="#FFFFFF" /></shape>
-    </item>
-    <item android:gravity="center" android:width="10dp" android:height="10dp">
-        <shape android:shape="oval"><solid android:color="#5BE9A0" /></shape>
-    </item>
-</layer-list>
+<!--
+  Banner de VibeTube para el launcher de Android TV (320 x 180 dp).
+  La palabra «VibeTube» va trazada a mano como líneas (sin fuentes ni logos de terceros).
+  Las coordenadas están en un lienzo de 320 x 180 y el grupo centra el texto.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- Fondo: el mismo negro azulado de la interfaz. -->
+    <path
+        android:fillColor="#0B0D10"
+        android:pathData="M0,0H320V180H0Z" />
+
+    <group
+        android:translateX="8"
+        android:translateY="6">
+        <!-- V -->
+        <path
+            android:pathData="M20,56 L36,112 L52,56"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="11"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <!-- i: palito y punto -->
+        <path
+            android:pathData="M66,82 V112 M66,62 V63"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="11"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <!-- b -->
+        <path
+            android:pathData="M80,56 V112 M80,82 H92 Q104,82 104,97 Q104,112 92,112 H80"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="11"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <!-- e -->
+        <path
+            android:pathData="M116,97 H140 Q140,82 128,82 Q116,82 116,97 Q116,112 128,112 Q136,112 140,106"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="11"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <!-- T -->
+        <path
+            android:pathData="M152,56 H176 M164,56 V112"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="11"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <!-- u -->
+        <path
+            android:pathData="M188,82 V100 Q188,112 200,112 Q212,112 212,100 M212,82 V112"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="11"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <!-- b -->
+        <path
+            android:pathData="M224,56 V112 M224,82 H236 Q248,82 248,97 Q248,112 236,112 H224"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="11"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <!-- e -->
+        <path
+            android:pathData="M260,97 H284 Q284,82 272,82 Q260,82 260,97 Q260,112 272,112 Q280,112 284,106"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="11"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+
+    <!-- Punto verde de la marca (en vivo / en uso), bajo la palabra. -->
+    <path
+        android:fillColor="#5BE9A0"
+        android:pathData="M154,140 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 Z" />
+</vector>

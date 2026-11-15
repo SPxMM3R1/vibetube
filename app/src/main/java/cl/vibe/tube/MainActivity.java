@@ -1,4 +1,4 @@
-package cl.vibe.videos;
+package cl.vibe.tube;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -42,7 +42,7 @@ import io.reactivex.schedulers.Schedulers;
  * texto que flota sobre una sola capa de degradado, foco = blanco en negrita y bloque levantado.
  */
 public class MainActivity extends Activity {
-    static final String TAG = "VibeVideos";
+    static final String TAG = "VibeTube";
     static final PathInterpolator SPRING = new PathInterpolator(0.34f, 1.42f, 0.64f, 1f);
     static final int LIVE = 0xFF5BE9A0;
     static final int NOW = 0xFF00B8D9;
@@ -126,7 +126,7 @@ public class MainActivity extends Activity {
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
         top.setPadding(0, 0, dp(48), 0);
-        top.addView(eyebrow("Videos", 0x99FFFFFF));
+        top.addView(eyebrow("VibeTube", 0x99FFFFFF));
         tabHome = tab("Inicio", () -> { if (searchMode) { searchMode = false; refreshTabs(); loadHome(); } });
         tabSearch = tab("Buscar", () -> { searchMode = true; refreshTabs(); searchBox.requestFocus(); });
         top.addView(tabHome);
